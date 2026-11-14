@@ -20,6 +20,11 @@ func Parse(s string) (Decimal, error) {
 	return d, nil
 }
 
+// FromInt mengubah bilangan bulat menjadi Decimal tanpa lewat float.
+func FromInt(n int64) Decimal {
+	return decimal.NewFromInt(n)
+}
+
 // RoundHalfUp membulatkan ke jumlah desimal tertentu dengan aturan setengah ke atas.
 func RoundHalfUp(d Decimal, places int32) Decimal {
 	return d.Round(places)

@@ -18,9 +18,11 @@ import (
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/config"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/dashboard"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/db"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/discount"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/inventory"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/menu"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/middleware"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/pos"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/recipe"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/settings"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/supplier"
@@ -184,6 +186,17 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("POST /api/v1/settings/taxes", authed(perm("tax.manage")(http.HandlerFunc(settingsHandler.CreateTax))))
 	mux.Handle("POST /api/v1/settings/taxes/{id}/deactivate", authed(perm("tax.manage")(settingsHandler.SetTaxActive(false))))
 	mux.Handle("POST /api/v1/settings/taxes/{id}/activate", authed(perm("tax.manage")(settingsHandler.SetTaxActive(true))))
+
+	discountHandler := discount.NewHandler(discount.NewService(discount.NewRepository(pool)))
+	mux.Handle("GET /api/v1/discounts", authed(perm("orders.view")(http.HandlerFunc(discountHandler.List))))
+	mux.Handle("GET /api/v1/discounts/{id}", authed(perm("orders.view")(http.HandlerFunc(discountHandler.Get))))
+	mux.Handle("POST /api/v1/discounts", authed(perm("discounts.manage")(http.HandlerFunc(discountHandler.Create))))
+	mux.Handle("PATCH /api/v1/discounts/{id}", authed(perm("discounts.manage")(http.HandlerFunc(discountHandler.Update))))
+	mux.Handle("POST /api/v1/discounts/{id}/deactivate", authed(perm("discounts.manage")(discountHandler.SetActive(false))))
+	mux.Handle("POST /api/v1/discounts/{id}/activate", authed(perm("discounts.manage")(discountHandler.SetActive(true))))
+
+	posHandler := pos.NewHandler()
+	mux.Handle("POST /api/v1/pos/calculate", authed(perm("orders.create")(http.HandlerFunc(posHandler.PreviewTotal))))
 
 	return handlerChain(mux, logger)
 }
