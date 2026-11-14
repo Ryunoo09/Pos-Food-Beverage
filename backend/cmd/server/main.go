@@ -20,6 +20,7 @@ import (
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/db"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/discount"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/inventory"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/kitchen"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/menu"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/middleware"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/order"
@@ -221,6 +222,12 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("PATCH /api/v1/tables/{id}", authed(perm("tables.manage")(http.HandlerFunc(tableHandler.Update))))
 	mux.Handle("PATCH /api/v1/tables/{id}/status", authed(perm("tables.manage")(http.HandlerFunc(tableHandler.SetStatus))))
 	mux.Handle("DELETE /api/v1/tables/{id}", authed(perm("tables.manage")(http.HandlerFunc(tableHandler.Delete))))
+
+	kitchenHandler := kitchen.NewHandler(kitchen.NewService(kitchen.NewRepository(pool)))
+	mux.Handle("GET /api/v1/kitchen/orders", authed(perm("kitchen.orders.view")(http.HandlerFunc(kitchenHandler.List))))
+	mux.Handle("GET /api/v1/kitchen/orders/history", authed(perm("kitchen.orders.view")(http.HandlerFunc(kitchenHandler.History))))
+	mux.Handle("PATCH /api/v1/kitchen/items/{id}/status", authed(perm("kitchen.orders.update_status")(http.HandlerFunc(kitchenHandler.UpdateItemStatus))))
+	mux.Handle("PATCH /api/v1/kitchen/orders/{id}/priority", authed(perm("kitchen.orders.set_priority")(http.HandlerFunc(kitchenHandler.SetPriority))))
 
 	return handlerChain(mux, logger)
 }
