@@ -21,6 +21,7 @@ import (
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/inventory"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/menu"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/middleware"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/recipe"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/supplier"
 )
 
@@ -169,6 +170,11 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("POST /api/v1/suppliers/{id}/deactivate", authed(perm("suppliers.deactivate")(supplierHandler.SetActive(false))))
 	mux.Handle("POST /api/v1/suppliers/{id}/activate", authed(perm("suppliers.update")(supplierHandler.SetActive(true))))
 	mux.Handle("PUT /api/v1/suppliers/{id}/ingredients", authed(perm("suppliers.update")(http.HandlerFunc(supplierHandler.SetIngredients))))
+
+	recipeHandler := recipe.NewHandler(recipe.NewService(recipe.NewRepository(pool)))
+	mux.Handle("GET /api/v1/variants/{id}/recipe", authed(perm("recipes.view")(http.HandlerFunc(recipeHandler.Active))))
+	mux.Handle("GET /api/v1/variants/{id}/recipes", authed(perm("recipes.view")(http.HandlerFunc(recipeHandler.Versions))))
+	mux.Handle("POST /api/v1/variants/{id}/recipes", authed(perm("recipes.create")(http.HandlerFunc(recipeHandler.Create))))
 
 	return handlerChain(mux, logger)
 }
