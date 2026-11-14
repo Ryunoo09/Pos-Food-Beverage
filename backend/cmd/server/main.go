@@ -14,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/auth"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/config"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/db"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/middleware"
@@ -46,7 +47,7 @@ func run(logger *slog.Logger) error {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           newRouter(pool, logger),
+		Handler:           newRouter(pool, logger, cfg),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -76,9 +77,40 @@ func run(logger *slog.Logger) error {
 	return nil
 }
 
-func newRouter(pool *pgxpool.Pool, logger *slog.Logger) http.Handler {
+func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", healthHandler(pool))
+
+	svc := auth.NewService(auth.NewRepository(pool), cfg.JWTSecret, cfg.AccessTTL, cfg.RefreshTTL)
+	h := auth.NewHandler(svc, cfg.CookieSecure, cfg.RefreshTTL)
+
+	authed := middleware.AuthRequired(svc, cfg.JWTSecret)
+	perm := middleware.PermissionRequired
+
+	// Publik (rate limit login ditangani service via lockout akun).
+	mux.HandleFunc("POST /api/v1/auth/login", h.Login)
+	mux.HandleFunc("POST /api/v1/auth/refresh", h.Refresh)
+
+	// Sesi milik sendiri: terautentikasi, tanpa permission khusus.
+	mux.Handle("POST /api/v1/auth/logout", authed(http.HandlerFunc(h.Logout)))
+	mux.Handle("POST /api/v1/auth/logout-all", authed(http.HandlerFunc(h.LogoutAll)))
+	mux.Handle("GET /api/v1/auth/me", authed(http.HandlerFunc(h.Me)))
+	mux.Handle("POST /api/v1/auth/change-password", authed(http.HandlerFunc(h.ChangePassword)))
+	mux.Handle("GET /api/v1/auth/sessions", authed(perm("auth.sessions.view_own")(http.HandlerFunc(h.Sessions))))
+	mux.Handle("DELETE /api/v1/auth/sessions/{id}", authed(perm("auth.sessions.revoke_own")(http.HandlerFunc(h.DeleteSession))))
+	mux.Handle("GET /api/v1/auth/login-history", authed(perm("auth.login_history.view")(http.HandlerFunc(h.LoginHistory))))
+
+	mux.Handle("GET /api/v1/users", authed(perm("users.view")(http.HandlerFunc(h.ListUsers))))
+	mux.Handle("POST /api/v1/users", authed(perm("users.create")(http.HandlerFunc(h.CreateUser))))
+	mux.Handle("GET /api/v1/users/{id}", authed(perm("users.view")(http.HandlerFunc(h.GetUser))))
+	mux.Handle("PATCH /api/v1/users/{id}", authed(perm("users.update")(http.HandlerFunc(h.UpdateUser))))
+	mux.Handle("POST /api/v1/users/{id}/deactivate", authed(perm("users.deactivate")(h.SetUserActive(false))))
+	mux.Handle("POST /api/v1/users/{id}/activate", authed(perm("users.update")(h.SetUserActive(true))))
+	mux.Handle("POST /api/v1/users/{id}/reset-password", authed(perm("users.reset_password")(http.HandlerFunc(h.ResetPassword))))
+	mux.Handle("POST /api/v1/users/{id}/roles", authed(perm("roles.manage")(http.HandlerFunc(h.SetUserRoles))))
+	mux.Handle("DELETE /api/v1/users/{id}/roles/{roleId}", authed(perm("roles.manage")(http.HandlerFunc(h.RemoveUserRole))))
+
+	mux.Handle("GET /api/v1/roles", authed(perm("roles.view")(http.HandlerFunc(h.ListRoles))))
 
 	return handlerChain(mux, logger)
 }
