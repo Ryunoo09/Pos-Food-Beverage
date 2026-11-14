@@ -150,6 +150,9 @@ func (s *Service) Confirm(ctx context.Context, actor auth.Actor, orderID string)
 	if err := s.repo.MarkCostUnknown(ctx, tx, unknown); err != nil {
 		return nil, err
 	}
+	if err := s.repo.CreateKitchenOrder(ctx, tx, actor.OutletID, o.ID, o.Priority); err != nil {
+		return nil, err
+	}
 
 	// ponytail: periode dari waktu server; business_day_cutoff belum diterapkan.
 	period := time.Now().Format("060102")

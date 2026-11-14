@@ -433,6 +433,38 @@ func (r *Repository) InsertStatusHistory(ctx context.Context, tx pgx.Tx, orderID
 	return nil
 }
 
+// CreateKitchenOrder membuat tiket dapur round 1 berisi item ACTIVE pesanan.
+func (r *Repository) CreateKitchenOrder(ctx context.Context, tx pgx.Tx, outletID, orderID, priority string) error {
+	var kitchenID string
+	const insOrder = `
+		INSERT INTO kitchen_orders (outlet_id, order_id, round_no, priority)
+		VALUES ($1, $2, 1, $3)
+		ON CONFLICT (order_id, round_no) DO NOTHING
+		RETURNING id`
+	err := tx.QueryRow(ctx, insOrder, outletID, orderID, priority).Scan(&kitchenID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil // tiket sudah ada, idempoten
+	}
+	if err != nil {
+		return fmt.Errorf("createKitchenOrder: %w", err)
+	}
+
+	const insItems = `
+		INSERT INTO kitchen_order_items (kitchen_order_id, order_item_id, name_snapshot,
+		                                 variant_snapshot, modifiers_text, note, quantity, station)
+		SELECT $1, oi.id, oi.product_name_snapshot, oi.variant_name_snapshot,
+		       (SELECT string_agg(m.option_name_snapshot, ', ' ORDER BY m.option_name_snapshot)
+		          FROM order_item_modifiers m WHERE m.order_item_id = oi.id),
+		       oi.note, oi.quantity, p.kitchen_station
+		FROM order_items oi
+		JOIN products p ON p.id = oi.product_id
+		WHERE oi.order_id = $2 AND oi.status = 'ACTIVE'`
+	if _, err := tx.Exec(ctx, insItems, kitchenID, orderID); err != nil {
+		return fmt.Errorf("createKitchenOrder: items: %w", err)
+	}
+	return nil
+}
+
 // AllowNegativeStock membaca setelan outlet; default true bila baris tidak ada.
 func (r *Repository) AllowNegativeStock(ctx context.Context, q querier, outletID string) (bool, error) {
 	var ok bool
