@@ -73,5 +73,6 @@ type VariantInput struct {
 	SKU       string `json:"sku"`
 	Price     string `json:"price"`
 	IsDefault bool   `json:"is_default"`
+	IsActive  *bool  `json:"is_active"`
 	SortOrder int    `json:"sort_order"`
 }

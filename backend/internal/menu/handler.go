@@ -200,3 +200,75 @@ func pagination(r *http.Request) (int, int) {
 	}
 	return page, perPage
 }
+
+func (h *Handler) ListVariants(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	items, err := h.svc.ListVariants(r.Context(), actor.BusinessID, r.PathValue("id"))
+	if err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, items, requestID)
+}
+
+func (h *Handler) CreateVariant(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	var in VariantInput
+	if err := httpx.DecodeJSON(w, r, &in); err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+
+	item, err := h.svc.CreateVariant(r.Context(), actor.BusinessID, r.PathValue("id"), in)
+	if err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	httpx.WriteData(w, http.StatusCreated, item, requestID)
+}
+
+func (h *Handler) UpdateVariant(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	var in VariantInput
+	if err := httpx.DecodeJSON(w, r, &in); err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+
+	item, err := h.svc.UpdateVariant(r.Context(), actor, r.PathValue("id"), in)
+	if err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, item, requestID)
+}
+
+func (h *Handler) SetAvailability(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	var body struct {
+		IsAvailable *bool `json:"is_available"`
+	}
+	if err := httpx.DecodeJSON(w, r, &body); err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	if body.IsAvailable == nil {
+		httpx.WriteError(w, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR",
+			"Field is_available wajib diisi."), requestID)
+		return
+	}
+
+	if err := h.svc.SetAvailability(r.Context(), actor.BusinessID, r.PathValue("id"), *body.IsAvailable); err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

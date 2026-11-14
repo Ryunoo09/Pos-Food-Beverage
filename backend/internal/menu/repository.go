@@ -279,3 +279,73 @@ func nullIfEmpty(s string) *string {
 	}
 	return &s
 }
+
+func (r *Repository) CreateVariant(ctx context.Context, productID string, in VariantInput) (*Variant, error) {
+	const q = `
+		INSERT INTO product_variants (product_id, name, sku_suffix, price, is_default, sort_order)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, name, COALESCE(sku_suffix, ''), price::text, is_default, is_active, sort_order`
+
+	v := &Variant{}
+	if err := r.pool.QueryRow(ctx, q, productID, in.Name, nullIfEmpty(in.SKU), in.Price,
+		in.IsDefault, in.SortOrder).Scan(&v.ID, &v.Name, &v.SKU, &v.Price,
+		&v.IsDefault, &v.IsActive, &v.SortOrder); err != nil {
+		return nil, fmt.Errorf("createVariant: %w", err)
+	}
+	return v, nil
+}
+
+func (r *Repository) UpdateVariant(ctx context.Context, businessID, variantID string, in VariantInput, isActive bool) (*Variant, error) {
+	const q = `
+		UPDATE product_variants v
+		SET name = $3, sku_suffix = $4, price = $5, is_default = $6, is_active = $7,
+		    sort_order = $8, updated_at = now()
+		FROM products p
+		WHERE v.id = $1 AND p.id = v.product_id AND p.business_id = $2
+		RETURNING v.id, v.name, COALESCE(v.sku_suffix, ''), v.price::text,
+		          v.is_default, v.is_active, v.sort_order`
+
+	v := &Variant{}
+	err := r.pool.QueryRow(ctx, q, variantID, businessID, in.Name, nullIfEmpty(in.SKU),
+		in.Price, in.IsDefault, isActive, in.SortOrder).Scan(&v.ID, &v.Name, &v.SKU,
+		&v.Price, &v.IsDefault, &v.IsActive, &v.SortOrder)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("updateVariant: %w", err)
+	}
+	return v, nil
+}
+
+func (r *Repository) SetProductAvailability(ctx context.Context, businessID, id string, available bool) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE products SET is_available = $3, updated_at = now() WHERE id = $1 AND business_id = $2`,
+		id, businessID, available)
+	if err != nil {
+		return fmt.Errorf("setProductAvailability: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *Repository) Variant(ctx context.Context, businessID, variantID string) (*Variant, error) {
+	const q = `
+		SELECT v.id, v.name, COALESCE(v.sku_suffix, ''), v.price::text, v.is_default, v.is_active, v.sort_order
+		FROM product_variants v
+		JOIN products p ON p.id = v.product_id
+		WHERE v.id = $1 AND p.business_id = $2`
+
+	v := &Variant{}
+	err := r.pool.QueryRow(ctx, q, variantID, businessID).Scan(&v.ID, &v.Name, &v.SKU,
+		&v.Price, &v.IsDefault, &v.IsActive, &v.SortOrder)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("variant: %w", err)
+	}
+	return v, nil
+}

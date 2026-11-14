@@ -234,3 +234,103 @@ func mapProductError(err error) error {
 func productNotFound() error {
 	return httpx.NewError(http.StatusNotFound, "PRODUCT_NOT_FOUND", "Produk tidak ditemukan.")
 }
+
+func (s *Service) ListVariants(ctx context.Context, businessID, productID string) ([]Variant, error) {
+	if _, err := s.Product(ctx, businessID, productID); err != nil {
+		return nil, err
+	}
+	return s.repo.variants(ctx, productID)
+}
+
+func (s *Service) CreateVariant(ctx context.Context, businessID, productID string, in VariantInput) (*Variant, error) {
+	if _, err := s.Product(ctx, businessID, productID); err != nil {
+		return nil, err
+	}
+
+	in, err := validateVariant(in)
+	if err != nil {
+		return nil, err
+	}
+
+	v, err := s.repo.CreateVariant(ctx, productID, in)
+	if err != nil {
+		return nil, mapProductError(err)
+	}
+	return v, nil
+}
+
+func (s *Service) UpdateVariant(ctx context.Context, actor auth.Actor, variantID string, in VariantInput) (*Variant, error) {
+	in, err := validateVariant(in)
+	if err != nil {
+		return nil, err
+	}
+
+	// ponytail: harga boleh berubah hanya dengan products.update_price; riwayat harga
+	// dicatat pada commit berikutnya bersama tabel price_histories.
+	if !hasPermission(actor.Permissions, "products.update_price") {
+		current, err := s.repo.Variant(ctx, actor.BusinessID, variantID)
+		if errors.Is(err, ErrNotFound) {
+			return nil, httpx.NewError(http.StatusNotFound, "VARIANT_NOT_FOUND", "Varian tidak ditemukan.")
+		}
+		if err != nil {
+			return nil, err
+		}
+		parsed, err := money.Parse(in.Price)
+		if err != nil || !parsed.Equal(mustParse(current.Price)) {
+			return nil, httpx.NewError(http.StatusForbidden, "PRODUCT_PRICE_FORBIDDEN",
+				"Tidak punya izin mengubah harga produk.")
+		}
+		in.Price = current.Price
+	}
+
+	v, err := s.repo.UpdateVariant(ctx, actor.BusinessID, variantID, in, activeOr(in.IsActive, true))
+	if errors.Is(err, ErrNotFound) {
+		return nil, httpx.NewError(http.StatusNotFound, "VARIANT_NOT_FOUND", "Varian tidak ditemukan.")
+	}
+	if err != nil {
+		return nil, mapProductError(err)
+	}
+	return v, nil
+}
+
+func (s *Service) SetAvailability(ctx context.Context, businessID, productID string, available bool) error {
+	err := s.repo.SetProductAvailability(ctx, businessID, productID, available)
+	if errors.Is(err, ErrNotFound) {
+		return productNotFound()
+	}
+	return err
+}
+
+func validateVariant(in VariantInput) (VariantInput, error) {
+	in.Name = strings.TrimSpace(in.Name)
+	if in.Name == "" {
+		return in, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR", "Nama varian wajib diisi.")
+	}
+	price, err := money.Parse(in.Price)
+	if err != nil || price.IsNegative() {
+		return in, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR", "Harga varian tidak valid.")
+	}
+	in.Price = money.Format(price)
+	return in, nil
+}
+
+func activeOr(v *bool, fallback bool) bool {
+	if v == nil {
+		return fallback
+	}
+	return *v
+}
+
+func mustParse(s string) money.Decimal {
+	d, _ := money.Parse(s)
+	return d
+}
+
+func hasPermission(list []string, want string) bool {
+	for _, p := range list {
+		if p == want {
+			return true
+		}
+	}
+	return false
+}

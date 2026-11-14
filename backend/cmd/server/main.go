@@ -131,6 +131,11 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("POST /api/v1/products/{id}/deactivate", authed(perm("products.deactivate")(menuHandler.SetProductActive(false))))
 	mux.Handle("POST /api/v1/products/{id}/activate", authed(perm("products.update")(menuHandler.SetProductActive(true))))
 
+	mux.Handle("GET /api/v1/products/{id}/variants", authed(perm("products.view")(http.HandlerFunc(menuHandler.ListVariants))))
+	mux.Handle("POST /api/v1/products/{id}/variants", authed(perm("products.update")(http.HandlerFunc(menuHandler.CreateVariant))))
+	mux.Handle("PATCH /api/v1/variants/{id}", authed(perm("products.update")(http.HandlerFunc(menuHandler.UpdateVariant))))
+	mux.Handle("PATCH /api/v1/products/{id}/availability", authed(perm("products.set_availability")(http.HandlerFunc(menuHandler.SetAvailability))))
+
 	return handlerChain(mux, logger)
 }
 
