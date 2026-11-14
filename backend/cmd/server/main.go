@@ -31,6 +31,7 @@ import (
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/settings"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/supplier"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/table"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/waste"
 )
 
 func main() {
@@ -195,6 +196,12 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("POST /api/v1/purchase-orders/{id}/receivings", authed(perm("purchases.receive")(http.HandlerFunc(purchaseHandler.ReceiveForPO))))
 	mux.Handle("POST /api/v1/purchase-receivings", authed(perm("purchases.receive_direct")(http.HandlerFunc(purchaseHandler.ReceiveDirect))))
 	mux.Handle("GET /api/v1/purchase-receivings/{id}", authed(perm("purchases.view")(http.HandlerFunc(purchaseHandler.GetReceiving))))
+
+	wasteHandler := waste.NewHandler(waste.NewService(waste.NewRepository(pool)))
+	mux.Handle("POST /api/v1/waste-records", authed(perm("waste.create")(http.HandlerFunc(wasteHandler.Create))))
+	mux.Handle("GET /api/v1/waste-records", authed(perm("waste.view")(http.HandlerFunc(wasteHandler.List))))
+	mux.Handle("GET /api/v1/waste-records/{id}", authed(perm("waste.view")(http.HandlerFunc(wasteHandler.Get))))
+	mux.Handle("POST /api/v1/waste-records/{id}/reverse", authed(perm("waste.reverse")(http.HandlerFunc(wasteHandler.Reverse))))
 
 	supplierHandler := supplier.NewHandler(supplier.NewService(supplier.NewRepository(pool)))
 	mux.Handle("GET /api/v1/suppliers", authed(perm("suppliers.view")(http.HandlerFunc(supplierHandler.List))))
