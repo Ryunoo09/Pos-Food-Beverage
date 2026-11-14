@@ -212,6 +212,44 @@ func (r *Repository) ReleaseIdempotency(ctx context.Context, scope, key string) 
 	return nil
 }
 
+// InsertCashMovement mencatat kas masuk/keluar pada shift.
+func (r *Repository) InsertCashMovement(ctx context.Context, outletID, shiftID, userID, movementType,
+	amount string, category, reason *string) (*CashMovement, error) {
+	const q = `
+		INSERT INTO cash_movements (outlet_id, shift_id, type, amount, category, reason, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, shift_id, type, amount::text, category, reason, created_by::text, created_at`
+
+	m := &CashMovement{}
+	if err := r.pool.QueryRow(ctx, q, outletID, shiftID, movementType, amount, category, reason, userID).
+		Scan(&m.ID, &m.ShiftID, &m.Type, &m.Amount, &m.Category, &m.Reason, &m.CreatedBy, &m.CreatedAt); err != nil {
+		return nil, fmt.Errorf("insertCashMovement: %w", err)
+	}
+	return m, nil
+}
+
+func (r *Repository) CashMovements(ctx context.Context, outletID, shiftID string) ([]CashMovement, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, shift_id, type, amount::text, category, reason, created_by::text, created_at
+		FROM cash_movements WHERE outlet_id = $1 AND shift_id = $2
+		ORDER BY created_at`, outletID, shiftID)
+	if err != nil {
+		return nil, fmt.Errorf("cashMovements: %w", err)
+	}
+	defer rows.Close()
+
+	items := []CashMovement{}
+	for rows.Next() {
+		var m CashMovement
+		if err := rows.Scan(&m.ID, &m.ShiftID, &m.Type, &m.Amount, &m.Category, &m.Reason,
+			&m.CreatedBy, &m.CreatedAt); err != nil {
+			return nil, fmt.Errorf("cashMovements: scan: %w", err)
+		}
+		items = append(items, m)
+	}
+	return items, rows.Err()
+}
+
 func (r *Repository) List(ctx context.Context, outletID string, f Filter) ([]Shift, int, error) {
 	where := ` WHERE outlet_id = $1`
 	args := []any{outletID}

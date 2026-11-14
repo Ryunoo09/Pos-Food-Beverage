@@ -269,6 +269,8 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("GET /api/v1/shifts/{id}/summary", authed(perm("shifts.view")(http.HandlerFunc(shiftHandler.Summary))))
 	mux.Handle("GET /api/v1/shifts/{id}/report", authed(perm("shifts.view")(http.HandlerFunc(shiftHandler.Summary))))
 	mux.Handle("POST /api/v1/shifts/{id}/close", authed(perm("shifts.close")(http.HandlerFunc(shiftHandler.Close))))
+	mux.Handle("GET /api/v1/shifts/{id}/cash-movements", authed(perm("cash_movements.view")(http.HandlerFunc(shiftHandler.CashMovements))))
+	mux.Handle("POST /api/v1/shifts/{id}/cash-movements", authed(perm("cash_movements.create")(http.HandlerFunc(shiftHandler.AddCashMovement))))
 
 	tableHandler := table.NewHandler(table.NewService(table.NewRepository(pool)))
 	mux.Handle("GET /api/v1/tables", authed(perm("tables.view")(http.HandlerFunc(tableHandler.List))))

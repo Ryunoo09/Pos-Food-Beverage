@@ -52,3 +52,22 @@ type Filter struct {
 	Page    int
 	PerPage int
 }
+
+// CashMovement adalah kas masuk/keluar selama shift (FR-F16-3).
+type CashMovement struct {
+	ID        string    `json:"id"`
+	ShiftID   string    `json:"shift_id"`
+	Type      string    `json:"type"`
+	Amount    string    `json:"amount"`
+	Category  *string   `json:"category,omitempty"`
+	Reason    *string   `json:"reason,omitempty"`
+	CreatedBy *string   `json:"created_by,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type CashMovementInput struct {
+	Type     string  `json:"type"`
+	Amount   string  `json:"amount"`
+	Category *string `json:"category"`
+	Reason   *string `json:"reason"`
+}

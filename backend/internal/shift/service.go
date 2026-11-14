@@ -303,3 +303,48 @@ func outletMissing() error {
 	return httpx.NewError(http.StatusUnprocessableEntity, "OUTLET_NOT_CONFIGURED",
 		"Outlet belum dikonfigurasi.")
 }
+
+// AddCashMovement mencatat kas masuk/keluar pada shift yang masih terbuka (FR-F16-3).
+func (s *Service) AddCashMovement(ctx context.Context, actor auth.Actor, shiftID string, in CashMovementInput) (*CashMovement, error) {
+	if actor.OutletID == "" {
+		return nil, outletMissing()
+	}
+	if in.Type != "IN" && in.Type != "OUT" {
+		return nil, validation("type harus IN atau OUT.")
+	}
+	amount, err := money.Parse(strings.TrimSpace(in.Amount))
+	if err != nil || !amount.IsPositive() {
+		return nil, validation("amount harus lebih dari 0.")
+	}
+	reason := trimNote(in.Reason)
+	if reason == nil {
+		return nil, validation("reason wajib diisi.")
+	}
+
+	shift, found, err := s.repo.ByID(ctx, actor.OutletID, shiftID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, notFound()
+	}
+	if shift.Status != "OPEN" {
+		return nil, httpx.NewError(http.StatusUnprocessableEntity, "SHIFT_ALREADY_CLOSED",
+			"Shift sudah ditutup; kas tidak dapat diubah.")
+	}
+	return s.repo.InsertCashMovement(ctx, actor.OutletID, shiftID, actor.UserID, in.Type,
+		money.Format(amount), trimNote(in.Category), reason)
+}
+
+// CashMovements menampilkan kas masuk/keluar sebuah shift.
+func (s *Service) CashMovements(ctx context.Context, actor auth.Actor, shiftID string) ([]CashMovement, error) {
+	if actor.OutletID == "" {
+		return nil, outletMissing()
+	}
+	if _, found, err := s.repo.ByID(ctx, actor.OutletID, shiftID); err != nil {
+		return nil, err
+	} else if !found {
+		return nil, notFound()
+	}
+	return s.repo.CashMovements(ctx, actor.OutletID, shiftID)
+}

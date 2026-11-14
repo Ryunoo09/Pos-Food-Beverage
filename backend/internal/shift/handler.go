@@ -100,3 +100,32 @@ func atoiDefault(s string, def int) int {
 	}
 	return n
 }
+
+func (h *Handler) AddCashMovement(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	var in CashMovementInput
+	if err := httpx.DecodeJSON(w, r, &in); err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	movement, err := h.svc.AddCashMovement(r.Context(), actor, r.PathValue("id"), in)
+	if err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	httpx.WriteData(w, http.StatusCreated, movement, requestID)
+}
+
+func (h *Handler) CashMovements(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	items, err := h.svc.CashMovements(r.Context(), actor, r.PathValue("id"))
+	if err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, items, requestID)
+}
