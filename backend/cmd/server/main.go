@@ -27,6 +27,7 @@ import (
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/recipe"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/settings"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/supplier"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/table"
 )
 
 func main() {
@@ -212,6 +213,14 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("POST /api/v1/orders/{id}/move-table", authed(perm("orders.move_table")(http.HandlerFunc(orderHandler.MoveTable))))
 	mux.Handle("GET /api/v1/orders/{id}/receipt", authed(perm("orders.view")(http.HandlerFunc(orderHandler.Receipt))))
 	mux.Handle("POST /api/v1/orders/{id}/receipt/reprint", authed(perm("orders.reprint_receipt")(http.HandlerFunc(orderHandler.ReprintReceipt))))
+
+	tableHandler := table.NewHandler(table.NewService(table.NewRepository(pool)))
+	mux.Handle("GET /api/v1/tables", authed(perm("tables.view")(http.HandlerFunc(tableHandler.List))))
+	mux.Handle("GET /api/v1/tables/{id}", authed(perm("tables.view")(http.HandlerFunc(tableHandler.Get))))
+	mux.Handle("POST /api/v1/tables", authed(perm("tables.manage")(http.HandlerFunc(tableHandler.Create))))
+	mux.Handle("PATCH /api/v1/tables/{id}", authed(perm("tables.manage")(http.HandlerFunc(tableHandler.Update))))
+	mux.Handle("PATCH /api/v1/tables/{id}/status", authed(perm("tables.manage")(http.HandlerFunc(tableHandler.SetStatus))))
+	mux.Handle("DELETE /api/v1/tables/{id}", authed(perm("tables.manage")(http.HandlerFunc(tableHandler.Delete))))
 
 	return handlerChain(mux, logger)
 }
