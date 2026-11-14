@@ -80,6 +80,26 @@ func (r *Repository) FindUserByID(ctx context.Context, id string) (*User, error)
 	return u, nil
 }
 
+// DefaultOutletID mengembalikan outlet default bisnis. MVP satu outlet; bila
+// multi-outlet aktif, outlet harus diambil dari konteks pengguna/pilihan UI.
+func (r *Repository) DefaultOutletID(ctx context.Context, businessID string) (string, error) {
+	const q = `
+		SELECT id FROM outlets
+		WHERE business_id = $1 AND is_active
+		ORDER BY is_default DESC, created_at
+		LIMIT 1`
+
+	var id string
+	err := r.pool.QueryRow(ctx, q, businessID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("defaultOutletID: %w", err)
+	}
+	return id, nil
+}
+
 func (r *Repository) RoleCodes(ctx context.Context, userID string) ([]string, error) {
 	const q = `
 		SELECT COALESCE(array_agg(r.code ORDER BY r.code), '{}')

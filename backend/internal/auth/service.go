@@ -355,8 +355,12 @@ func (s *Service) LoadActor(ctx context.Context, userID, businessID, requestID, 
 	if err != nil {
 		return Actor{}, err
 	}
+	outletID, err := s.repo.DefaultOutletID(ctx, businessID)
+	if err != nil {
+		return Actor{}, err
+	}
 	return Actor{
-		UserID: userID, BusinessID: businessID, Roles: roles,
+		UserID: userID, BusinessID: businessID, OutletID: outletID, Roles: roles,
 		RequestID: requestID, IPAddress: ip, UserAgent: userAgent,
 	}, nil
 }

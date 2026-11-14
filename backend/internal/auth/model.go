@@ -104,6 +104,7 @@ type AuthResult struct {
 type Actor struct {
 	UserID      string
 	BusinessID  string
+	OutletID    string
 	Roles       []string
 	Permissions []string
 	RequestID   string
