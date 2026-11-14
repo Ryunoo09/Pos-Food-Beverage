@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/auth"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/pkg/money"
 )
 
@@ -424,6 +425,60 @@ func (r *Repository) SetTableStatus(ctx context.Context, q querier, outletID, ta
 	return nil
 }
 
+// OutletInfo mengambil identitas outlet untuk header struk.
+func (r *Repository) OutletInfo(ctx context.Context, outletID string) (*ReceiptOutlet, error) {
+	const q = `SELECT id, code, name, address, phone FROM outlets WHERE id = $1`
+	o := &ReceiptOutlet{}
+	err := r.pool.QueryRow(ctx, q, outletID).Scan(&o.ID, &o.Code, &o.Name, &o.Address, &o.Phone)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("outletInfo: %w", err)
+	}
+	return o, nil
+}
+
+// Payments mengambil pembayaran berhasil pesanan untuk struk.
+func (r *Repository) Payments(ctx context.Context, orderID string) ([]Payment, error) {
+	const q = `
+		SELECT id, method_code, amount::text, status, reference_no, paid_at
+		FROM payments WHERE order_id = $1 AND status = 'SUCCESS'
+		ORDER BY created_at`
+
+	rows, err := r.pool.Query(ctx, q, orderID)
+	if err != nil {
+		return nil, fmt.Errorf("payments: %w", err)
+	}
+	defer rows.Close()
+
+	out := []Payment{}
+	for rows.Next() {
+		var p Payment
+		if err := rows.Scan(&p.ID, &p.MethodCode, &p.Amount, &p.Status, &p.ReferenceNo, &p.PaidAt); err != nil {
+			return nil, fmt.Errorf("payments: scan: %w", err)
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// InsertAudit menulis audit log; kegagalan dicatat pemanggil tanpa membatalkan aksi.
+func (r *Repository) InsertAudit(ctx context.Context, action, entityType, entityID string, a auth.Actor, after any) error {
+	const q = `
+		INSERT INTO audit_logs (business_id, user_id, action, entity_type, entity_id,
+		                        after_data, ip_address, user_agent, request_id)
+		VALUES ($1, NULLIF($2, '')::uuid, $3, NULLIF($4, ''), NULLIF($5, ''),
+		        $6, NULLIF($7, '')::inet, NULLIF($8, ''), NULLIF($9, ''))`
+
+	_, err := r.pool.Exec(ctx, q, a.BusinessID, a.UserID, action, entityType, entityID,
+		after, a.IPAddress, a.UserAgent, a.RequestID)
+	if err != nil {
+		return fmt.Errorf("insertAudit: %w", err)
+	}
+	return nil
+}
+
 // NextSequence menaikkan counter dokumen secara atomik per outlet dan periode.
 // Nomor boleh melompat saat rollback, tetapi tidak pernah ganda.
 func (r *Repository) NextSequence(ctx context.Context, q querier, outletID, docType, period string) (int, error) {
@@ -797,7 +852,8 @@ func (r *Repository) AllowNegativeStock(ctx context.Context, q querier, outletID
 func (r *Repository) List(ctx context.Context, outletID string, f Filter) ([]Order, int, error) {
 	const q = `
 		SELECT o.id, o.order_no, o.queue_no, o.service_type, o.status, o.payment_status,
-		       o.payment_timing, o.table_id, o.customer_name, o.note, o.priority,
+		       o.payment_timing, o.table_id, o.customer_name, o.customer_phone,
+		       o.delivery_address, o.note, o.priority,
 		       o.subtotal_amount::text, o.item_discount_amount::text,
 		       o.order_discount_amount::text, o.service_charge_rate::text,
 		       o.service_charge_amount::text, o.tax_rate::text, o.tax_amount::text,
@@ -823,7 +879,8 @@ func (r *Repository) List(ctx context.Context, outletID string, f Filter) ([]Ord
 	for rows.Next() {
 		var o Order
 		if err := rows.Scan(&o.ID, &o.OrderNo, &o.QueueNo, &o.ServiceType, &o.Status,
-			&o.PaymentStatus, &o.PaymentTiming, &o.TableID, &o.CustomerName, &o.Note,
+			&o.PaymentStatus, &o.PaymentTiming, &o.TableID, &o.CustomerName,
+			&o.CustomerPhone, &o.DelivAddress, &o.Note,
 			&o.Priority, &o.SubtotalAmount, &o.ItemDiscount, &o.OrderDiscount,
 			&o.ServiceRate, &o.ServiceAmount, &o.TaxRate, &o.TaxAmount, &o.TaxInclusive,
 			&o.RoundingAmount, &o.TotalAmount, &o.PaidAmount, &o.TotalCogs, &o.CreatedAt,

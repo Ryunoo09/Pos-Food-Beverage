@@ -189,6 +189,30 @@ func (h *Handler) MoveTable(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteData(w, http.StatusOK, o, requestID)
 }
 
+func (h *Handler) Receipt(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	receipt, err := h.svc.Receipt(r.Context(), actor, r.PathValue("id"))
+	if err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, receipt, requestID)
+}
+
+func (h *Handler) ReprintReceipt(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	receipt, err := h.svc.ReprintReceipt(r.Context(), actor, r.PathValue("id"))
+	if err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, receipt, requestID)
+}
+
 func pagination(r *http.Request) (int, int) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))

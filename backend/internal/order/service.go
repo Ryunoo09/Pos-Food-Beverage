@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -385,6 +386,43 @@ func (s *Service) MoveTable(ctx context.Context, actor auth.Actor, orderID strin
 		return nil, err
 	}
 	return s.repo.Order(ctx, actor.OutletID, orderID)
+}
+
+// Receipt menyusun struk pesanan: identitas outlet, pesanan, dan pembayaran.
+func (s *Service) Receipt(ctx context.Context, actor auth.Actor, orderID string) (*Receipt, error) {
+	if actor.OutletID == "" {
+		return nil, outletMissing()
+	}
+	o, err := s.repo.Order(ctx, actor.OutletID, orderID)
+	if errors.Is(err, ErrNotFound) {
+		return nil, notFound()
+	}
+	if err != nil {
+		return nil, err
+	}
+	outlet, err := s.repo.OutletInfo(ctx, actor.OutletID)
+	if err != nil {
+		return nil, err
+	}
+	payments, err := s.repo.Payments(ctx, o.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &Receipt{Outlet: *outlet, Order: o, Payments: payments}, nil
+}
+
+// ReprintReceipt mengembalikan struk yang sama dan mencatat audit cetak ulang.
+func (s *Service) ReprintReceipt(ctx context.Context, actor auth.Actor, orderID string) (*Receipt, error) {
+	receipt, err := s.Receipt(ctx, actor, orderID)
+	if err != nil {
+		return nil, err
+	}
+	// ponytail: kegagalan audit tidak membatalkan cetak ulang; ganti ke tx bila audit wajib.
+	if err := s.repo.InsertAudit(ctx, "ORDER_RECEIPT_REPRINT", "order", receipt.Order.ID, actor,
+		map[string]any{"order_no": receipt.Order.OrderNo, "total": receipt.Order.TotalAmount}); err != nil {
+		slog.Warn("reprint audit failed", "order_id", receipt.Order.ID, "error", err)
+	}
+	return receipt, nil
 }
 
 // confirm mengunci draft menjadi pesanan resmi: status, nomor order/antrean, dan

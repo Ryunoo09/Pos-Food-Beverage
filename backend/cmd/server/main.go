@@ -210,6 +210,8 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("POST /api/v1/orders/{id}/cancel", authed(perm("orders.cancel")(http.HandlerFunc(orderHandler.Cancel))))
 	mux.Handle("POST /api/v1/orders/{id}/items/{itemID}/void", authed(perm("orders.void_item")(http.HandlerFunc(orderHandler.VoidItem))))
 	mux.Handle("POST /api/v1/orders/{id}/move-table", authed(perm("orders.move_table")(http.HandlerFunc(orderHandler.MoveTable))))
+	mux.Handle("GET /api/v1/orders/{id}/receipt", authed(perm("orders.view")(http.HandlerFunc(orderHandler.Receipt))))
+	mux.Handle("POST /api/v1/orders/{id}/receipt/reprint", authed(perm("orders.reprint_receipt")(http.HandlerFunc(orderHandler.ReprintReceipt))))
 
 	return handlerChain(mux, logger)
 }

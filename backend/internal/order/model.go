@@ -115,6 +115,30 @@ type MoveTableInput struct {
 	TableID string `json:"table_id"`
 }
 
+// Receipt adalah struk yang dikirim ke klien untuk dicetak.
+type Receipt struct {
+	Outlet   ReceiptOutlet `json:"outlet"`
+	Order    *Order        `json:"order"`
+	Payments []Payment     `json:"payments"`
+}
+
+type ReceiptOutlet struct {
+	ID      string  `json:"id"`
+	Code    string  `json:"code"`
+	Name    string  `json:"name"`
+	Address *string `json:"address,omitempty"`
+	Phone   *string `json:"phone,omitempty"`
+}
+
+type Payment struct {
+	ID          string     `json:"id"`
+	MethodCode  string     `json:"method_code"`
+	Amount      string     `json:"amount"`
+	Status      string     `json:"status"`
+	ReferenceNo *string    `json:"reference_no,omitempty"`
+	PaidAt      *time.Time `json:"paid_at,omitempty"`
+}
+
 type Filter struct {
 	Status  *string
 	Query   string
