@@ -9,17 +9,19 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/audit"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/auth"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/httpx"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/pkg/money"
 )
 
 type Service struct {
-	repo *Repository
+	repo  *Repository
+	audit *audit.Writer
 }
 
-func NewService(repo *Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo *Repository, writer *audit.Writer) *Service {
+	return &Service{repo: repo, audit: writer}
 }
 
 // Create mencatat pembayaran dengan proteksi idempotensi.
@@ -316,6 +318,18 @@ func (s *Service) void(ctx context.Context, actor auth.Actor, paymentID string, 
 		return nil, err
 	}
 
+	if err := s.audit.Insert(ctx, tx, audit.Entry{
+		Actor:      actor.Audit(),
+		Action:     "payment.void",
+		EntityType: "payment",
+		EntityID:   paymentID,
+		Before:     map[string]any{"status": pay.Status},
+		After:      map[string]any{"status": "VOIDED"},
+		Reason:     reason,
+	}); err != nil {
+		return nil, err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
@@ -562,6 +576,24 @@ func (s *Service) createRefund(ctx context.Context, actor auth.Actor, orderID, k
 	}
 	// ponytail: restock bahan dari refund belum menggerakkan stok; tambahkan bila kebijakan restock ditetapkan.
 
+	if err := s.audit.Insert(ctx, tx, audit.Entry{
+		Actor:      actor.Audit(),
+		Action:     "payment.refund",
+		EntityType: "refund",
+		EntityID:   refundID,
+		After: map[string]any{
+			"order_id":      orderID,
+			"amount":        money.Format(amount),
+			"refund_type":   refundType,
+			"status":        status,
+			"self_approved": selfApproved,
+		},
+		Reason:       deref(in.ReasonNote),
+		SelfApproved: selfApproved,
+	}); err != nil {
+		return nil, 0, err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, 0, err
 	}
@@ -640,6 +672,17 @@ func (s *Service) ApproveRefund(ctx context.Context, actor auth.Actor, refundID 
 	if err := s.repo.ApplyRefund(ctx, tx, actor.OutletID, refund.OrderID, money.Format(newRefunded), payStatus); err != nil {
 		return nil, err
 	}
+	if err := s.audit.Insert(ctx, tx, audit.Entry{
+		Actor:      actor.Audit(),
+		Action:     "payment.refund_approve",
+		EntityType: "refund",
+		EntityID:   refundID,
+		Before:     map[string]any{"status": refund.Status},
+		After:      map[string]any{"status": "COMPLETED", "amount": refund.Amount},
+		Reason:     deref(in.Note),
+	}); err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
@@ -674,6 +717,17 @@ func (s *Service) RejectRefund(ctx context.Context, actor auth.Actor, refundID s
 	}
 	if err := s.repo.SetRefundStatus(ctx, tx, actor.OutletID, refundID, "REJECTED", actor.UserID,
 		trimNote(in.Note)); err != nil {
+		return nil, err
+	}
+	if err := s.audit.Insert(ctx, tx, audit.Entry{
+		Actor:      actor.Audit(),
+		Action:     "payment.refund_reject",
+		EntityType: "refund",
+		EntityID:   refundID,
+		Before:     map[string]any{"status": refund.Status},
+		After:      map[string]any{"status": "REJECTED"},
+		Reason:     deref(in.Note),
+	}); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {

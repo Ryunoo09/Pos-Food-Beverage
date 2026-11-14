@@ -9,17 +9,19 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/audit"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/auth"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/httpx"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/pkg/money"
 )
 
 type Service struct {
-	repo *Repository
+	repo  *Repository
+	audit *audit.Writer
 }
 
-func NewService(repo *Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo *Repository, writer *audit.Writer) *Service {
+	return &Service{repo: repo, audit: writer}
 }
 
 // Open membuka shift baru untuk kasir; satu shift OPEN per kasir (BR-F16-1).
@@ -182,6 +184,22 @@ func (s *Service) close(ctx context.Context, actor auth.Actor, id string, in Clo
 	}
 	if err := s.repo.Close(ctx, tx, id, summary.ExpectedCash, money.Format(actual),
 		summary.Difference, reason, snapshot); err != nil {
+		return nil, err
+	}
+	if err := s.audit.Insert(ctx, tx, audit.Entry{
+		Actor:      actor.Audit(),
+		Action:     "shift.close",
+		EntityType: "shift",
+		EntityID:   id,
+		Before:     map[string]any{"status": "OPEN"},
+		After: map[string]any{
+			"status":        "CLOSED",
+			"expected_cash": summary.ExpectedCash,
+			"actual_cash":   money.Format(actual),
+			"difference":    summary.Difference,
+		},
+		Reason: deref(reason),
+	}); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {

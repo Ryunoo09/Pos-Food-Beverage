@@ -1,6 +1,10 @@
 package auth
 
-import "time"
+import (
+	"time"
+
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/audit"
+)
 
 // User adalah baris minimal users yang dibutuhkan autentikasi.
 type User struct {
@@ -110,6 +114,19 @@ type Actor struct {
 	RequestID   string
 	IPAddress   string
 	UserAgent   string
+}
+
+// Audit mengisi konteks penulis audit dari aktor terautentikasi.
+func (a Actor) Audit() audit.Actor {
+	return audit.Actor{
+		BusinessID: a.BusinessID,
+		OutletID:   a.OutletID,
+		UserID:     a.UserID,
+		Roles:      a.Roles,
+		IPAddress:  a.IPAddress,
+		UserAgent:  a.UserAgent,
+		RequestID:  a.RequestID,
+	}
 }
 
 type LoginMeta struct {

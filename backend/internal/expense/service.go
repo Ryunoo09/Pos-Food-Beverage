@@ -7,17 +7,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/audit"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/auth"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/httpx"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/pkg/money"
 )
 
 type Service struct {
-	repo *Repository
+	repo  *Repository
+	audit *audit.Writer
 }
 
-func NewService(repo *Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo *Repository, writer *audit.Writer) *Service {
+	return &Service{repo: repo, audit: writer}
 }
 
 func (s *Service) ListCategories(ctx context.Context, actor auth.Actor) ([]Category, error) {
@@ -126,6 +128,20 @@ func (s *Service) Create(ctx context.Context, actor auth.Actor, in CreateInput) 
 			return nil, err
 		}
 	}
+	if err := s.audit.Insert(ctx, tx, audit.Entry{
+		Actor:      actor.Audit(),
+		Action:     "expense.create",
+		EntityType: "expense",
+		EntityID:   id,
+		After: map[string]any{
+			"name":             name,
+			"amount":           money.Format(amount),
+			"category_id":      in.CategoryID,
+			"paid_from_drawer": in.PaidFromDrawer,
+		},
+	}); err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
@@ -206,12 +222,12 @@ func (s *Service) Update(ctx context.Context, actor auth.Actor, id string, in Up
 		return nil, err
 	}
 
+	newAmount := current.Amount
+	if amount != nil {
+		newAmount = *amount
+	}
 	switch {
 	case paidFromDrawer:
-		newAmount := current.Amount
-		if amount != nil {
-			newAmount = *amount
-		}
 		if err := s.repo.SyncDrawerMovement(ctx, tx, actor.OutletID, id, *shiftID, actor.UserID, newAmount); err != nil {
 			return nil, err
 		}
@@ -219,6 +235,16 @@ func (s *Service) Update(ctx context.Context, actor auth.Actor, id string, in Up
 		if err := s.repo.DeleteDrawerMovement(ctx, tx, id); err != nil {
 			return nil, err
 		}
+	}
+	if err := s.audit.Insert(ctx, tx, audit.Entry{
+		Actor:      actor.Audit(),
+		Action:     "expense.update",
+		EntityType: "expense",
+		EntityID:   id,
+		Before:     map[string]any{"amount": current.Amount, "paid_from_drawer": current.PaidFromDrawer},
+		After:      map[string]any{"amount": newAmount, "paid_from_drawer": paidFromDrawer},
+	}); err != nil {
+		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
@@ -259,6 +285,17 @@ func (s *Service) Void(ctx context.Context, actor auth.Actor, id string, in Void
 	}
 	// Mutasi kas ikut dibatalkan agar expected_cash shift kembali konsisten.
 	if err := s.repo.DeleteDrawerMovement(ctx, tx, id); err != nil {
+		return nil, err
+	}
+	if err := s.audit.Insert(ctx, tx, audit.Entry{
+		Actor:      actor.Audit(),
+		Action:     "expense.void",
+		EntityType: "expense",
+		EntityID:   id,
+		Before:     map[string]any{"is_voided": false, "amount": current.Amount},
+		After:      map[string]any{"is_voided": true},
+		Reason:     reason,
+	}); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {

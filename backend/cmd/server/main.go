@@ -14,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/audit"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/auth"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/config"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/dashboard"
@@ -240,6 +241,8 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	posHandler := pos.NewHandler()
 	mux.Handle("POST /api/v1/pos/calculate", authed(perm("orders.create")(http.HandlerFunc(posHandler.PreviewTotal))))
 
+	auditWriter := audit.NewWriter(pool)
+
 	orderHandler := order.NewHandler(order.NewService(order.NewRepository(pool)))
 	mux.Handle("GET /api/v1/orders", authed(perm("orders.view")(http.HandlerFunc(orderHandler.List))))
 	mux.Handle("GET /api/v1/orders/{id}", authed(perm("orders.view")(http.HandlerFunc(orderHandler.Get))))
@@ -254,7 +257,7 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("GET /api/v1/orders/{id}/receipt", authed(perm("orders.view")(http.HandlerFunc(orderHandler.Receipt))))
 	mux.Handle("POST /api/v1/orders/{id}/receipt/reprint", authed(perm("orders.reprint_receipt")(http.HandlerFunc(orderHandler.ReprintReceipt))))
 
-	paymentHandler := payment.NewHandler(payment.NewService(payment.NewRepository(pool)))
+	paymentHandler := payment.NewHandler(payment.NewService(payment.NewRepository(pool), auditWriter))
 	mux.Handle("POST /api/v1/orders/{id}/payments", authed(perm("payments.create")(http.HandlerFunc(paymentHandler.Create))))
 	mux.Handle("GET /api/v1/orders/{id}/payments", authed(perm("payments.view")(http.HandlerFunc(paymentHandler.List))))
 	mux.Handle("POST /api/v1/payments/{id}/void", authed(perm("payments.void")(http.HandlerFunc(paymentHandler.Void))))
@@ -263,7 +266,7 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("POST /api/v1/refunds/{id}/approve", authed(perm("payments.approve_refund")(http.HandlerFunc(paymentHandler.ApproveRefund))))
 	mux.Handle("POST /api/v1/refunds/{id}/reject", authed(perm("payments.approve_refund")(http.HandlerFunc(paymentHandler.RejectRefund))))
 
-	shiftHandler := shift.NewHandler(shift.NewService(shift.NewRepository(pool)))
+	shiftHandler := shift.NewHandler(shift.NewService(shift.NewRepository(pool), auditWriter))
 	mux.Handle("GET /api/v1/shifts", authed(perm("shifts.view_all")(http.HandlerFunc(shiftHandler.List))))
 	mux.Handle("GET /api/v1/shifts/current", authed(perm("shifts.open")(http.HandlerFunc(shiftHandler.Current))))
 	mux.Handle("POST /api/v1/shifts/open", authed(perm("shifts.open")(http.HandlerFunc(shiftHandler.Open))))
@@ -273,7 +276,7 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("GET /api/v1/shifts/{id}/cash-movements", authed(perm("cash_movements.view")(http.HandlerFunc(shiftHandler.CashMovements))))
 	mux.Handle("POST /api/v1/shifts/{id}/cash-movements", authed(perm("cash_movements.create")(http.HandlerFunc(shiftHandler.AddCashMovement))))
 
-	expenseHandler := expense.NewHandler(expense.NewService(expense.NewRepository(pool)))
+	expenseHandler := expense.NewHandler(expense.NewService(expense.NewRepository(pool), auditWriter))
 	mux.Handle("GET /api/v1/expenses", authed(perm("expenses.view")(http.HandlerFunc(expenseHandler.List))))
 	mux.Handle("POST /api/v1/expenses", authed(perm("expenses.create")(http.HandlerFunc(expenseHandler.Create))))
 	mux.Handle("PATCH /api/v1/expenses/{id}", authed(perm("expenses.update")(http.HandlerFunc(expenseHandler.Update))))
