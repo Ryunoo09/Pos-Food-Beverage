@@ -22,6 +22,7 @@ import (
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/menu"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/middleware"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/recipe"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/settings"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/supplier"
 )
 
@@ -175,6 +176,14 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("GET /api/v1/variants/{id}/recipe", authed(perm("recipes.view")(http.HandlerFunc(recipeHandler.Active))))
 	mux.Handle("GET /api/v1/variants/{id}/recipes", authed(perm("recipes.view")(http.HandlerFunc(recipeHandler.Versions))))
 	mux.Handle("POST /api/v1/variants/{id}/recipes", authed(perm("recipes.create")(http.HandlerFunc(recipeHandler.Create))))
+
+	settingsHandler := settings.NewHandler(settings.NewService(settings.NewRepository(pool)))
+	mux.Handle("GET /api/v1/settings/outlet", authed(perm("settings.view")(http.HandlerFunc(settingsHandler.GetSettings))))
+	mux.Handle("PATCH /api/v1/settings/outlet", authed(perm("settings.manage")(http.HandlerFunc(settingsHandler.UpdateSettings))))
+	mux.Handle("GET /api/v1/settings/taxes", authed(perm("settings.view")(http.HandlerFunc(settingsHandler.ListTaxes))))
+	mux.Handle("POST /api/v1/settings/taxes", authed(perm("tax.manage")(http.HandlerFunc(settingsHandler.CreateTax))))
+	mux.Handle("POST /api/v1/settings/taxes/{id}/deactivate", authed(perm("tax.manage")(settingsHandler.SetTaxActive(false))))
+	mux.Handle("POST /api/v1/settings/taxes/{id}/activate", authed(perm("tax.manage")(settingsHandler.SetTaxActive(true))))
 
 	return handlerChain(mux, logger)
 }
