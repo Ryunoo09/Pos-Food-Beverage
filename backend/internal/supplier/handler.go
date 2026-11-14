@@ -108,6 +108,18 @@ func (h *Handler) SetIngredients(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *Handler) PurchaseHistory(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	items, err := h.svc.PurchaseHistory(r.Context(), actor.OutletID, r.PathValue("id"))
+	if err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, items, requestID)
+}
+
 func boolParam(raw string) *bool {
 	switch raw {
 	case "true", "1":

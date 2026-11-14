@@ -12,6 +12,15 @@ type Supplier struct {
 	Ingredients   []SupplierIngredient `json:"ingredients"`
 }
 
+type PurchaseHistoryRow struct {
+	ID          string `json:"id"`
+	Code        string `json:"code"`
+	Status      string `json:"status"`
+	OrderDate   string `json:"order_date"`
+	TotalAmount string `json:"total_amount"`
+	ItemCount   int    `json:"item_count"`
+}
+
 type SupplierInput struct {
 	Name          string  `json:"name"`
 	ContactPerson *string `json:"contact_person"`

@@ -26,6 +26,7 @@ import (
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/opname"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/order"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/pos"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/purchase"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/recipe"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/settings"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/supplier"
@@ -183,6 +184,18 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("POST /api/v1/stock-opnames/{id}/cancel", authed(perm("stock_opname.cancel")(http.HandlerFunc(opnameHandler.Cancel))))
 	mux.Handle("GET /api/v1/stock-opnames/{id}/report", authed(perm("stock_opname.view")(http.HandlerFunc(opnameHandler.Report))))
 
+	purchaseHandler := purchase.NewHandler(purchase.NewService(purchase.NewRepository(pool)))
+	mux.Handle("POST /api/v1/purchase-orders", authed(perm("purchases.create")(http.HandlerFunc(purchaseHandler.Create))))
+	mux.Handle("GET /api/v1/purchase-orders", authed(perm("purchases.view")(http.HandlerFunc(purchaseHandler.List))))
+	mux.Handle("GET /api/v1/purchase-orders/{id}", authed(perm("purchases.view")(http.HandlerFunc(purchaseHandler.Get))))
+	mux.Handle("PATCH /api/v1/purchase-orders/{id}", authed(perm("purchases.update")(http.HandlerFunc(purchaseHandler.Update))))
+	mux.Handle("POST /api/v1/purchase-orders/{id}/submit", authed(perm("purchases.submit")(http.HandlerFunc(purchaseHandler.Submit))))
+	mux.Handle("POST /api/v1/purchase-orders/{id}/approve", authed(perm("purchases.approve")(http.HandlerFunc(purchaseHandler.Approve))))
+	mux.Handle("POST /api/v1/purchase-orders/{id}/cancel", authed(perm("purchases.cancel")(http.HandlerFunc(purchaseHandler.Cancel))))
+	mux.Handle("POST /api/v1/purchase-orders/{id}/receivings", authed(perm("purchases.receive")(http.HandlerFunc(purchaseHandler.ReceiveForPO))))
+	mux.Handle("POST /api/v1/purchase-receivings", authed(perm("purchases.receive_direct")(http.HandlerFunc(purchaseHandler.ReceiveDirect))))
+	mux.Handle("GET /api/v1/purchase-receivings/{id}", authed(perm("purchases.view")(http.HandlerFunc(purchaseHandler.GetReceiving))))
+
 	supplierHandler := supplier.NewHandler(supplier.NewService(supplier.NewRepository(pool)))
 	mux.Handle("GET /api/v1/suppliers", authed(perm("suppliers.view")(http.HandlerFunc(supplierHandler.List))))
 	mux.Handle("GET /api/v1/suppliers/{id}", authed(perm("suppliers.view")(http.HandlerFunc(supplierHandler.Get))))
@@ -191,6 +204,7 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("POST /api/v1/suppliers/{id}/deactivate", authed(perm("suppliers.deactivate")(supplierHandler.SetActive(false))))
 	mux.Handle("POST /api/v1/suppliers/{id}/activate", authed(perm("suppliers.update")(supplierHandler.SetActive(true))))
 	mux.Handle("PUT /api/v1/suppliers/{id}/ingredients", authed(perm("suppliers.update")(http.HandlerFunc(supplierHandler.SetIngredients))))
+	mux.Handle("GET /api/v1/suppliers/{id}/purchase-history", authed(perm("purchases.view")(http.HandlerFunc(supplierHandler.PurchaseHistory))))
 
 	recipeHandler := recipe.NewHandler(recipe.NewService(recipe.NewRepository(pool)))
 	mux.Handle("GET /api/v1/variants/{id}/recipe", authed(perm("recipes.view")(http.HandlerFunc(recipeHandler.Active))))

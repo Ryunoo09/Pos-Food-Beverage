@@ -96,6 +96,11 @@ func (s *Service) SetIngredients(ctx context.Context, businessID, id string, ite
 	return err
 }
 
+// PurchaseHistory mengembalikan riwayat PO supplier pada outlet aktif.
+func (s *Service) PurchaseHistory(ctx context.Context, outletID, supplierID string) ([]PurchaseHistoryRow, error) {
+	return s.repo.PurchaseHistory(ctx, outletID, supplierID)
+}
+
 func validate(in SupplierInput) (SupplierInput, error) {
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" {

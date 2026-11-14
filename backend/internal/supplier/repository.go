@@ -193,3 +193,30 @@ func (r *Repository) SetIngredients(ctx context.Context, businessID, id string, 
 	}
 	return nil
 }
+
+// PurchaseHistory mengambil riwayat PO per supplier pada satu outlet.
+func (r *Repository) PurchaseHistory(ctx context.Context, outletID, supplierID string) ([]PurchaseHistoryRow, error) {
+	const q = `
+		SELECT po.id, po.code, po.status, po.order_date::text, po.total_amount::text,
+		       (SELECT count(*)::int FROM purchase_order_items poi WHERE poi.purchase_order_id = po.id)
+		FROM purchase_orders po
+		WHERE po.outlet_id = $1 AND po.supplier_id = $2
+		ORDER BY po.order_date DESC, po.created_at DESC
+		LIMIT 100`
+
+	rows, err := r.pool.Query(ctx, q, outletID, supplierID)
+	if err != nil {
+		return nil, fmt.Errorf("purchaseHistory: %w", err)
+	}
+	defer rows.Close()
+
+	items := []PurchaseHistoryRow{}
+	for rows.Next() {
+		var h PurchaseHistoryRow
+		if err := rows.Scan(&h.ID, &h.Code, &h.Status, &h.OrderDate, &h.TotalAmount, &h.ItemCount); err != nil {
+			return nil, fmt.Errorf("purchaseHistory: scan: %w", err)
+		}
+		items = append(items, h)
+	}
+	return items, rows.Err()
+}
