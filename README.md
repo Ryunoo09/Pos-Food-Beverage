@@ -27,6 +27,8 @@ Butuh Go 1.25+, Node 22+, PostgreSQL 16 (atau Docker).
 cp .env.example .env      # isi DB_PASSWORD
 ```
 
+Backend membaca `.env` otomatis (`go run` dari `backend/` mencari `.env` di folder itu lalu parent). Environment variable OS selalu menang atas isi `.env`, jadi produksi bisa override tanpa mengubah file.
+
 ### Backend
 
 ```bash

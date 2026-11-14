@@ -16,6 +16,8 @@ type Config struct {
 }
 
 func Load() (Config, error) {
+	loadDotEnv()
+
 	cfg := Config{
 		Env:             env("APP_ENV", "development"),
 		Port:            env("PORT", "8080"),
