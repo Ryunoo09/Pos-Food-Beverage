@@ -1,0 +1,311 @@
+// Package order mengelola pesanan: draft, item, dan (tahap berikut) konfirmasi.
+package order
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"strings"
+
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/auth"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/httpx"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/pkg/money"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/pos"
+)
+
+type Service struct {
+	repo *Repository
+}
+
+func NewService(repo *Repository) *Service {
+	return &Service{repo: repo}
+}
+
+func (s *Service) List(ctx context.Context, actor auth.Actor, f Filter) ([]Order, int, error) {
+	if actor.OutletID == "" {
+		return nil, 0, outletMissing()
+	}
+	if f.Status != nil && !validStatus(*f.Status) {
+		return nil, 0, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR", "status tidak valid.")
+	}
+	return s.repo.List(ctx, actor.OutletID, f)
+}
+
+func (s *Service) Get(ctx context.Context, actor auth.Actor, id string) (*Order, error) {
+	if actor.OutletID == "" {
+		return nil, outletMissing()
+	}
+	o, err := s.repo.Order(ctx, actor.OutletID, id)
+	if errors.Is(err, ErrNotFound) {
+		return nil, notFound()
+	}
+	return o, err
+}
+
+func (s *Service) CreateDraft(ctx context.Context, actor auth.Actor, in DraftInput) (*Order, error) {
+	if actor.OutletID == "" {
+		return nil, outletMissing()
+	}
+
+	in.ServiceType = strings.TrimSpace(in.ServiceType)
+	if !validServiceType(in.ServiceType) {
+		return nil, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR",
+			"service_type harus DINE_IN, TAKEAWAY, PICKUP, atau DELIVERY.")
+	}
+	in.Priority = strings.TrimSpace(in.Priority)
+	if in.Priority == "" {
+		in.Priority = "NORMAL"
+	}
+	if in.Priority != "NORMAL" && in.Priority != "RUSH" {
+		return nil, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR",
+			"priority harus NORMAL atau RUSH.")
+	}
+
+	if in.TableID != nil && *in.TableID != "" {
+		owned, err := s.repo.TableOwned(ctx, actor.OutletID, *in.TableID)
+		if err != nil {
+			return nil, err
+		}
+		if !owned {
+			return nil, httpx.NewError(http.StatusUnprocessableEntity, "TABLE_NOT_FOUND",
+				"Meja tidak ditemukan atau tidak aktif.")
+		}
+	} else {
+		in.TableID = nil
+	}
+
+	pricing, err := s.repo.Pricing(ctx, actor.OutletID, in.ServiceType)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, outletMissing()
+		}
+		return nil, err
+	}
+
+	o, err := s.repo.CreateDraft(ctx, actor.OutletID, actor.UserID, in, pricing)
+	if err != nil {
+		return nil, err
+	}
+	return o, nil
+}
+
+func (s *Service) AddItem(ctx context.Context, actor auth.Actor, orderID string, in ItemInput) (*Order, error) {
+	o, err := s.draft(ctx, actor, orderID)
+	if err != nil {
+		return nil, err
+	}
+	if in.Quantity <= 0 {
+		return nil, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR", "quantity harus lebih dari nol.")
+	}
+
+	sv, err := s.repo.SaleVariant(ctx, actor.BusinessID, in.ProductID, in.VariantID)
+	if errors.Is(err, ErrNotFound) {
+		return nil, httpx.NewError(http.StatusUnprocessableEntity, "PRODUCT_VARIANT_NOT_FOUND",
+			"Produk atau varian tidak tersedia untuk dijual.")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var choices []modifierChoice
+	if len(in.ModifierOptionIDs) > 0 {
+		choices, err = s.repo.ModifierOptions(ctx, actor.BusinessID, in.ModifierOptionIDs)
+		if err != nil {
+			return nil, err
+		}
+		if len(choices) != len(unique(in.ModifierOptionIDs)) {
+			return nil, httpx.NewError(http.StatusUnprocessableEntity, "MODIFIER_OPTION_INVALID",
+				"Modifier tidak valid atau tidak aktif.")
+		}
+	}
+
+	unitPrice, _ := money.Parse(sv.UnitPrice)
+	modifiersTotal, _ := money.Parse("0")
+	for _, c := range choices {
+		delta, err := money.Parse(c.PriceDelta)
+		if err != nil {
+			return nil, err
+		}
+		modifiersTotal = modifiersTotal.Add(delta)
+	}
+
+	lineTotal := unitPrice.Add(modifiersTotal).Mul(money.FromInt(int64(in.Quantity)))
+	if _, err := s.repo.AddItem(ctx, o.ID, sv, in, choices, money.Format(modifiersTotal),
+		money.Format(lineTotal)); err != nil {
+		return nil, err
+	}
+	return s.recalc(ctx, actor, o.ID)
+}
+
+func (s *Service) UpdateItem(ctx context.Context, actor auth.Actor, orderID, itemID string, in UpdateItemInput) (*Order, error) {
+	o, err := s.draft(ctx, actor, orderID)
+	if err != nil {
+		return nil, err
+	}
+	if in.Quantity == nil && in.Note == nil {
+		return nil, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR",
+			"Kirim quantity atau note yang ingin diubah.")
+	}
+
+	quantity := 0
+	if in.Quantity != nil {
+		if *in.Quantity <= 0 {
+			return nil, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR", "quantity harus lebih dari nol.")
+		}
+		quantity = *in.Quantity
+	}
+
+	if in.Quantity != nil {
+		ok, err := s.repo.UpdateItemQuantity(ctx, o.ID, itemID, quantity, in.Note)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, itemNotFound()
+		}
+	} else {
+		ok, err := s.repo.UpdateItemNote(ctx, o.ID, itemID, in.Note)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, itemNotFound()
+		}
+	}
+	return s.recalc(ctx, actor, o.ID)
+}
+
+func (s *Service) DeleteItem(ctx context.Context, actor auth.Actor, orderID, itemID string) (*Order, error) {
+	o, err := s.draft(ctx, actor, orderID)
+	if err != nil {
+		return nil, err
+	}
+	ok, err := s.repo.DeleteItem(ctx, o.ID, itemID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, itemNotFound()
+	}
+	return s.recalc(ctx, actor, o.ID)
+}
+
+// draft memastikan pesanan ada, milik outlet, dan masih DRAFT sebelum diubah.
+func (s *Service) draft(ctx context.Context, actor auth.Actor, orderID string) (*Order, error) {
+	if actor.OutletID == "" {
+		return nil, outletMissing()
+	}
+	o, err := s.repo.Order(ctx, actor.OutletID, orderID)
+	if errors.Is(err, ErrNotFound) {
+		return nil, notFound()
+	}
+	if err != nil {
+		return nil, err
+	}
+	if o.Status != "DRAFT" {
+		return nil, httpx.NewError(http.StatusConflict, "ORDER_NOT_DRAFT",
+			"Pesanan sudah dikonfirmasi dan tidak bisa diubah.")
+	}
+	return o, nil
+}
+
+// recalc menghitung ulang total otoritatif di server lalu menyimpannya.
+func (s *Service) recalc(ctx context.Context, actor auth.Actor, orderID string) (*Order, error) {
+	o, err := s.repo.Order(ctx, actor.OutletID, orderID)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]pos.Item, 0, len(o.Items))
+	for _, item := range o.Items {
+		if item.Status != "ACTIVE" {
+			continue
+		}
+		unitPrice, err := money.Parse(item.UnitPrice)
+		if err != nil {
+			return nil, err
+		}
+		modifiers, err := money.Parse(item.ModifiersTotal)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, pos.Item{
+			UnitPrice: money.Format(unitPrice.Add(modifiers)),
+			Quantity:  item.Quantity,
+		})
+	}
+
+	totals := orderTotals{
+		Subtotal: "0.00", ItemDiscount: "0.00", OrderDiscount: "0.00",
+		Service: "0.00", Tax: "0.00", Rounding: "0.00", Total: "0.00",
+	}
+	if len(items) > 0 {
+		result, err := pos.Calculate(pos.Input{
+			Items:        items,
+			TaxRate:      o.TaxRate,
+			ServiceRate:  o.ServiceRate,
+			TaxInclusive: o.TaxInclusive,
+			TaxOnService: o.pricing.TaxOnService,
+			RoundingMode: o.pricing.RoundingMode,
+		})
+		if err != nil {
+			return nil, err
+		}
+		totals = orderTotals{
+			Subtotal:      result.Subtotal,
+			ItemDiscount:  result.ItemDiscount,
+			OrderDiscount: result.OrderDiscount,
+			Service:       result.Service,
+			Tax:           result.Tax,
+			Rounding:      result.RoundingAdjustment,
+			Total:         result.Total,
+		}
+	}
+
+	if err := s.repo.SaveTotals(ctx, o.ID, totals); err != nil {
+		return nil, err
+	}
+	return s.repo.Order(ctx, actor.OutletID, o.ID)
+}
+
+func validServiceType(v string) bool {
+	switch v {
+	case "DINE_IN", "TAKEAWAY", "PICKUP", "DELIVERY":
+		return true
+	}
+	return false
+}
+
+func validStatus(v string) bool {
+	switch v {
+	case "DRAFT", "CONFIRMED", "IN_PROGRESS", "READY", "SERVED", "COMPLETED", "CANCELLED":
+		return true
+	}
+	return false
+}
+
+func unique(ids []string) []string {
+	seen := make(map[string]struct{}, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+func notFound() error {
+	return httpx.NewError(http.StatusNotFound, "ORDER_NOT_FOUND", "Pesanan tidak ditemukan.")
+}
+
+func itemNotFound() error {
+	return httpx.NewError(http.StatusNotFound, "ORDER_ITEM_NOT_FOUND", "Item pesanan tidak ditemukan.")
+}
+
+func outletMissing() error {
+	return httpx.NewError(http.StatusUnprocessableEntity, "OUTLET_NOT_CONFIGURED",
+		"Outlet belum dikonfigurasi.")
+}

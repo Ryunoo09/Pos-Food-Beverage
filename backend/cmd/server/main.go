@@ -22,6 +22,7 @@ import (
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/inventory"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/menu"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/middleware"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/order"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/pos"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/recipe"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/settings"
@@ -197,6 +198,14 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 
 	posHandler := pos.NewHandler()
 	mux.Handle("POST /api/v1/pos/calculate", authed(perm("orders.create")(http.HandlerFunc(posHandler.PreviewTotal))))
+
+	orderHandler := order.NewHandler(order.NewService(order.NewRepository(pool)))
+	mux.Handle("GET /api/v1/orders", authed(perm("orders.view")(http.HandlerFunc(orderHandler.List))))
+	mux.Handle("GET /api/v1/orders/{id}", authed(perm("orders.view")(http.HandlerFunc(orderHandler.Get))))
+	mux.Handle("POST /api/v1/orders", authed(perm("orders.create")(http.HandlerFunc(orderHandler.CreateDraft))))
+	mux.Handle("POST /api/v1/orders/{id}/items", authed(perm("orders.create")(http.HandlerFunc(orderHandler.AddItem))))
+	mux.Handle("PATCH /api/v1/orders/{id}/items/{itemID}", authed(perm("orders.create")(http.HandlerFunc(orderHandler.UpdateItem))))
+	mux.Handle("DELETE /api/v1/orders/{id}/items/{itemID}", authed(perm("orders.create")(http.HandlerFunc(orderHandler.DeleteItem))))
 
 	return handlerChain(mux, logger)
 }
