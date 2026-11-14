@@ -18,6 +18,7 @@ import (
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/config"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/dashboard"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/db"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/inventory"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/menu"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/middleware"
 )
@@ -144,6 +145,20 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("POST /api/v1/modifier-groups/{id}/deactivate", authed(perm("modifiers.manage")(menuHandler.SetModifierGroupActive(false))))
 	mux.Handle("POST /api/v1/modifier-groups/{id}/activate", authed(perm("modifiers.manage")(menuHandler.SetModifierGroupActive(true))))
 	mux.Handle("PUT /api/v1/products/{id}/modifier-groups", authed(perm("products.update")(http.HandlerFunc(menuHandler.SetProductModifierGroups))))
+
+	inventoryHandler := inventory.NewHandler(inventory.NewService(inventory.NewRepository(pool)))
+	mux.Handle("GET /api/v1/units", authed(perm("ingredients.view")(http.HandlerFunc(inventoryHandler.Units))))
+	mux.Handle("GET /api/v1/ingredient-categories", authed(perm("ingredients.view")(http.HandlerFunc(inventoryHandler.ListCategories))))
+	mux.Handle("POST /api/v1/ingredient-categories", authed(perm("ingredients.update")(http.HandlerFunc(inventoryHandler.CreateCategory))))
+	mux.Handle("PATCH /api/v1/ingredient-categories/{id}", authed(perm("ingredients.update")(http.HandlerFunc(inventoryHandler.UpdateCategory))))
+	mux.Handle("DELETE /api/v1/ingredient-categories/{id}", authed(perm("ingredients.update")(http.HandlerFunc(inventoryHandler.DeleteCategory))))
+	mux.Handle("GET /api/v1/ingredients", authed(perm("ingredients.view")(http.HandlerFunc(inventoryHandler.ListIngredients))))
+	mux.Handle("GET /api/v1/ingredients/{id}", authed(perm("ingredients.view")(http.HandlerFunc(inventoryHandler.GetIngredient))))
+	mux.Handle("POST /api/v1/ingredients", authed(perm("ingredients.create")(http.HandlerFunc(inventoryHandler.CreateIngredient))))
+	mux.Handle("PATCH /api/v1/ingredients/{id}", authed(perm("ingredients.update")(http.HandlerFunc(inventoryHandler.UpdateIngredient))))
+	mux.Handle("POST /api/v1/ingredients/{id}/deactivate", authed(perm("ingredients.update")(inventoryHandler.SetIngredientActive(false))))
+	mux.Handle("POST /api/v1/ingredients/{id}/activate", authed(perm("ingredients.update")(inventoryHandler.SetIngredientActive(true))))
+	mux.Handle("GET /api/v1/ingredients/{id}/movements", authed(perm("inventory.view")(http.HandlerFunc(inventoryHandler.Movements))))
 
 	return handlerChain(mux, logger)
 }
