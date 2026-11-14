@@ -53,6 +53,8 @@ type VoidInput struct {
 type RefundItemInput struct {
 	OrderItemID string `json:"order_item_id"`
 	Quantity    int    `json:"quantity"`
+	Amount      string `json:"amount"`
+	Restock     bool   `json:"restock"`
 }
 
 type RefundInput struct {
@@ -84,7 +86,7 @@ type Refund struct {
 	SelfApproved bool         `json:"self_approved"`
 	CreatedAt    time.Time    `json:"created_at"`
 	CompletedAt  *time.Time   `json:"completed_at,omitempty"`
-	Items        []RefundLine `json:"items"`
+	Items        []RefundLine `json:"items,omitempty"`
 }
 
 type RefundLine struct {
@@ -92,4 +94,18 @@ type RefundLine struct {
 	Name        string `json:"name"`
 	Quantity    int    `json:"quantity"`
 	Amount      string `json:"amount"`
+	Restock     bool   `json:"restock"`
+}
+
+// RefundDecisionInput adalah alasan opsional saat approve/reject.
+type RefundDecisionInput struct {
+	Note *string `json:"note"`
+}
+
+// RefundFilter membatasi daftar refund.
+type RefundFilter struct {
+	OrderID string
+	Status  string
+	Page    int
+	PerPage int
 }
