@@ -378,6 +378,28 @@ type orderTotals struct {
 	Total         string
 }
 
+// querier adalah QueryRow dari pgxpool.Pool atau pgx.Tx.
+type querier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// NextSequence menaikkan counter dokumen secara atomik per outlet dan periode.
+// Nomor boleh melompat saat rollback, tetapi tidak pernah ganda.
+func (r *Repository) NextSequence(ctx context.Context, q querier, outletID, docType, period string) (int, error) {
+	const sql = `
+		INSERT INTO document_sequences (outlet_id, doc_type, period, last_number)
+		VALUES ($1, $2, $3, 1)
+		ON CONFLICT (outlet_id, doc_type, period)
+		DO UPDATE SET last_number = document_sequences.last_number + 1
+		RETURNING last_number`
+
+	var n int
+	if err := q.QueryRow(ctx, sql, outletID, docType, period).Scan(&n); err != nil {
+		return 0, fmt.Errorf("nextSequence: %w", err)
+	}
+	return n, nil
+}
+
 func (r *Repository) List(ctx context.Context, outletID string, f Filter) ([]Order, int, error) {
 	const q = `
 		SELECT o.id, o.order_no, o.queue_no, o.service_type, o.status, o.payment_status,
