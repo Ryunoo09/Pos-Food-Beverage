@@ -19,6 +19,7 @@ import (
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/dashboard"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/db"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/discount"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/expense"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/inventory"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/kitchen"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/menu"
@@ -271,6 +272,15 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("POST /api/v1/shifts/{id}/close", authed(perm("shifts.close")(http.HandlerFunc(shiftHandler.Close))))
 	mux.Handle("GET /api/v1/shifts/{id}/cash-movements", authed(perm("cash_movements.view")(http.HandlerFunc(shiftHandler.CashMovements))))
 	mux.Handle("POST /api/v1/shifts/{id}/cash-movements", authed(perm("cash_movements.create")(http.HandlerFunc(shiftHandler.AddCashMovement))))
+
+	expenseHandler := expense.NewHandler(expense.NewService(expense.NewRepository(pool)))
+	mux.Handle("GET /api/v1/expenses", authed(perm("expenses.view")(http.HandlerFunc(expenseHandler.List))))
+	mux.Handle("POST /api/v1/expenses", authed(perm("expenses.create")(http.HandlerFunc(expenseHandler.Create))))
+	mux.Handle("PATCH /api/v1/expenses/{id}", authed(perm("expenses.update")(http.HandlerFunc(expenseHandler.Update))))
+	mux.Handle("POST /api/v1/expenses/{id}/void", authed(perm("expenses.void")(http.HandlerFunc(expenseHandler.Void))))
+	mux.Handle("GET /api/v1/expense-categories", authed(perm("expenses.view")(http.HandlerFunc(expenseHandler.ListCategories))))
+	mux.Handle("POST /api/v1/expense-categories", authed(perm("expense_categories.manage")(http.HandlerFunc(expenseHandler.CreateCategory))))
+	mux.Handle("PATCH /api/v1/expense-categories/{id}", authed(perm("expense_categories.manage")(http.HandlerFunc(expenseHandler.UpdateCategory))))
 
 	tableHandler := table.NewHandler(table.NewService(table.NewRepository(pool)))
 	mux.Handle("GET /api/v1/tables", authed(perm("tables.view")(http.HandlerFunc(tableHandler.List))))
