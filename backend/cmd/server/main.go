@@ -25,6 +25,7 @@ import (
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/middleware"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/opname"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/order"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/payment"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/pos"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/purchase"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/recipe"
@@ -250,6 +251,10 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("POST /api/v1/orders/{id}/move-table", authed(perm("orders.move_table")(http.HandlerFunc(orderHandler.MoveTable))))
 	mux.Handle("GET /api/v1/orders/{id}/receipt", authed(perm("orders.view")(http.HandlerFunc(orderHandler.Receipt))))
 	mux.Handle("POST /api/v1/orders/{id}/receipt/reprint", authed(perm("orders.reprint_receipt")(http.HandlerFunc(orderHandler.ReprintReceipt))))
+
+	paymentHandler := payment.NewHandler(payment.NewService(payment.NewRepository(pool)))
+	mux.Handle("POST /api/v1/orders/{id}/payments", authed(perm("payments.create")(http.HandlerFunc(paymentHandler.Create))))
+	mux.Handle("GET /api/v1/orders/{id}/payments", authed(perm("payments.view")(http.HandlerFunc(paymentHandler.List))))
 
 	tableHandler := table.NewHandler(table.NewService(table.NewRepository(pool)))
 	mux.Handle("GET /api/v1/tables", authed(perm("tables.view")(http.HandlerFunc(tableHandler.List))))
