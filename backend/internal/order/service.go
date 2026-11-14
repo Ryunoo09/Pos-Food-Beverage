@@ -219,6 +219,11 @@ func (s *Service) Cancel(ctx context.Context, actor auth.Actor, orderID string, 
 	if err := s.repo.InsertStatusHistory(ctx, tx, o.ID, o.Status, "CANCELLED", actor.UserID); err != nil {
 		return nil, err
 	}
+	if o.TableID != nil {
+		if err := s.repo.SetTableStatus(ctx, tx, actor.OutletID, *o.TableID, "AVAILABLE"); err != nil {
+			return nil, err
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
@@ -319,6 +324,69 @@ func (s *Service) VoidItem(ctx context.Context, actor auth.Actor, orderID, itemI
 	return s.recalc(ctx, actor, o.ID)
 }
 
+// MoveTable memindahkan pesanan ke meja lain dalam satu transaksi: meja lama
+// dibebaskan dan meja baru ditandai OCCUPIED.
+func (s *Service) MoveTable(ctx context.Context, actor auth.Actor, orderID string, in MoveTableInput) (*Order, error) {
+	if actor.OutletID == "" {
+		return nil, outletMissing()
+	}
+	tableID := strings.TrimSpace(in.TableID)
+	if tableID == "" {
+		return nil, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR", "table_id wajib diisi.")
+	}
+
+	owned, err := s.repo.TableOwned(ctx, actor.OutletID, tableID)
+	if err != nil {
+		return nil, err
+	}
+	if !owned {
+		return nil, httpx.NewError(http.StatusUnprocessableEntity, "TABLE_NOT_FOUND",
+			"Meja tidak ditemukan atau tidak aktif.")
+	}
+
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	status, currentTable, ok, err := s.repo.LockOrder(ctx, tx, actor.OutletID, orderID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, notFound()
+	}
+	if status == "CANCELLED" || status == "COMPLETED" {
+		return nil, httpx.NewError(http.StatusConflict, "ORDER_NOT_MOVABLE",
+			"Pesanan sudah selesai atau dibatalkan.")
+	}
+	if currentTable != nil && *currentTable == tableID {
+		return nil, httpx.NewError(http.StatusUnprocessableEntity, "SAME_TABLE",
+			"Pesanan sudah berada di meja ini.")
+	}
+
+	if err := s.repo.UpdateOrderTable(ctx, tx, orderID, tableID); err != nil {
+		if isUniqueViolation(err) {
+			return nil, httpx.NewError(http.StatusConflict, "TABLE_OCCUPIED",
+				"Meja tujuan sudah dipakai pesanan aktif lain.")
+		}
+		return nil, err
+	}
+	if currentTable != nil {
+		if err := s.repo.SetTableStatus(ctx, tx, actor.OutletID, *currentTable, "AVAILABLE"); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.repo.SetTableStatus(ctx, tx, actor.OutletID, tableID, "OCCUPIED"); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return s.repo.Order(ctx, actor.OutletID, orderID)
+}
+
 // confirm mengunci draft menjadi pesanan resmi: status, nomor order/antrean, dan
 // snapshot harga final disimpan atomik.
 func (s *Service) confirm(ctx context.Context, actor auth.Actor, orderID string) (*Order, error) {
@@ -374,6 +442,11 @@ func (s *Service) confirm(ctx context.Context, actor auth.Actor, orderID string)
 	}
 	if err := s.repo.CreateKitchenOrder(ctx, tx, actor.OutletID, o.ID, o.Priority); err != nil {
 		return nil, err
+	}
+	if o.TableID != nil {
+		if err := s.repo.SetTableStatus(ctx, tx, actor.OutletID, *o.TableID, "OCCUPIED"); err != nil {
+			return nil, err
+		}
 	}
 
 	// ponytail: periode dari waktu server; business_day_cutoff belum diterapkan.

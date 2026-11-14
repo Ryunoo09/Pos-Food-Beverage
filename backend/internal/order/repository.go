@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/pkg/money"
@@ -384,9 +385,43 @@ type orderTotals struct {
 	Total         string
 }
 
-// querier adalah QueryRow dari pgxpool.Pool atau pgx.Tx.
+// querier adalah subset pgxpool.Pool atau pgx.Tx yang dipakai helper repository.
 type querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+// LockOrder mengunci pesanan untuk pembaruan dan mengembalikan status serta meja.
+func (r *Repository) LockOrder(ctx context.Context, tx pgx.Tx, outletID, orderID string) (string, *string, bool, error) {
+	const q = `SELECT status, table_id FROM orders WHERE id = $1 AND outlet_id = $2 FOR UPDATE`
+	var status string
+	var tableID *string
+	err := tx.QueryRow(ctx, q, orderID, outletID).Scan(&status, &tableID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil, false, nil
+	}
+	if err != nil {
+		return "", nil, false, fmt.Errorf("lockOrder: %w", err)
+	}
+	return status, tableID, true, nil
+}
+
+// UpdateOrderTable memindahkan pesanan ke meja lain.
+func (r *Repository) UpdateOrderTable(ctx context.Context, tx pgx.Tx, orderID, tableID string) error {
+	const q = `UPDATE orders SET table_id = $2, version = version + 1, updated_at = now() WHERE id = $1`
+	if _, err := tx.Exec(ctx, q, orderID, tableID); err != nil {
+		return fmt.Errorf("updateOrderTable: %w", err)
+	}
+	return nil
+}
+
+// SetTableStatus mengubah status meja milik outlet.
+func (r *Repository) SetTableStatus(ctx context.Context, q querier, outletID, tableID, status string) error {
+	const sql = `UPDATE tables SET status = $3, updated_at = now() WHERE id = $1 AND outlet_id = $2`
+	if _, err := q.Exec(ctx, sql, tableID, outletID, status); err != nil {
+		return fmt.Errorf("setTableStatus: %w", err)
+	}
+	return nil
 }
 
 // NextSequence menaikkan counter dokumen secara atomik per outlet dan periode.

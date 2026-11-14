@@ -111,6 +111,10 @@ type VoidInput struct {
 	Mode string `json:"mode"`
 }
 
+type MoveTableInput struct {
+	TableID string `json:"table_id"`
+}
+
 type Filter struct {
 	Status  *string
 	Query   string
