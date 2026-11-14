@@ -18,6 +18,7 @@ import (
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/config"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/dashboard"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/db"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/menu"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/middleware"
 )
 
@@ -115,6 +116,13 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 
 	dashboardHandler := dashboard.NewHandler(dashboard.NewService(dashboard.NewRepository(pool)))
 	mux.Handle("GET /api/v1/dashboard", authed(perm("dashboard.view")(http.HandlerFunc(dashboardHandler.Summary))))
+
+	menuHandler := menu.NewHandler(menu.NewService(menu.NewRepository(pool)))
+	mux.Handle("GET /api/v1/categories", authed(perm("products.view")(http.HandlerFunc(menuHandler.ListCategories))))
+	mux.Handle("GET /api/v1/categories/{id}", authed(perm("products.view")(http.HandlerFunc(menuHandler.GetCategory))))
+	mux.Handle("POST /api/v1/categories", authed(perm("categories.manage")(http.HandlerFunc(menuHandler.CreateCategory))))
+	mux.Handle("PATCH /api/v1/categories/{id}", authed(perm("categories.manage")(http.HandlerFunc(menuHandler.UpdateCategory))))
+	mux.Handle("DELETE /api/v1/categories/{id}", authed(perm("categories.manage")(http.HandlerFunc(menuHandler.DeleteCategory))))
 
 	return handlerChain(mux, logger)
 }
