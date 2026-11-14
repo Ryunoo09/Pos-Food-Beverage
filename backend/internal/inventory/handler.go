@@ -183,6 +183,61 @@ func (h *Handler) Movements(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteData(w, http.StatusOK, items, requestID)
 }
 
+func (h *Handler) Stock(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	page, perPage := pagination(r)
+	q := r.URL.Query()
+	low := boolParam(q.Get("low"))
+	filter := StockFilter{
+		Query:   q.Get("q"),
+		LowOnly: low != nil && *low,
+		Page:    page,
+		PerPage: perPage,
+	}
+
+	items, total, err := h.svc.Stock(r.Context(), actor, filter)
+	if err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	httpx.WritePage(w, items, httpx.PageMeta{
+		Page: page, PerPage: perPage, Total: total,
+		TotalPages: (total + perPage - 1) / perPage, RequestID: requestID,
+	})
+}
+
+func (h *Handler) StockMovements(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	items, err := h.svc.Movements(r.Context(), actor, r.PathValue("ingredientId"))
+	if err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, items, requestID)
+}
+
+func (h *Handler) Adjust(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	var in AdjustInput
+	if err := httpx.DecodeJSON(w, r, &in); err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+
+	result, err := h.svc.Adjust(r.Context(), actor, r.PathValue("ingredientId"), in)
+	if err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, result, requestID)
+}
+
 func boolParam(raw string) *bool {
 	switch raw {
 	case "true", "1":

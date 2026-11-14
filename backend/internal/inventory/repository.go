@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/pkg/money"
 )
 
 var ErrNotFound = errors.New("data inventaris tidak ditemukan")
@@ -290,4 +293,149 @@ func (r *Repository) Movements(ctx context.Context, outletID, ingredientID strin
 		items = append(items, m)
 	}
 	return items, rows.Err()
+}
+
+// StockLevels mengambil saldo stok per bahan untuk daftar inventaris.
+func (r *Repository) StockLevels(ctx context.Context, businessID, outletID string, f StockFilter) ([]StockLevel, int, error) {
+	const q = `
+		SELECT i.id, i.code, i.name, u.code,
+		       COALESCE(inv.quantity_on_hand, 0)::text, i.min_stock::text,
+		       COALESCE(inv.avg_unit_cost, 0)::text,
+		       ROUND(COALESCE(inv.quantity_on_hand, 0) * COALESCE(inv.avg_unit_cost, 0), 2)::text,
+		       (COALESCE(inv.quantity_on_hand, 0) <= i.min_stock) AS is_low,
+		       count(*) OVER ()::int
+		FROM ingredients i
+		JOIN units u ON u.id = i.base_unit_id
+		LEFT JOIN inventory inv ON inv.ingredient_id = i.id AND inv.outlet_id = $2
+		WHERE i.business_id = $1
+		  AND ($3 = '' OR i.name ILIKE '%' || $3 || '%' OR i.code ILIKE '%' || $3 || '%')
+		  AND ($4 = false OR COALESCE(inv.quantity_on_hand, 0) <= i.min_stock)
+		ORDER BY is_low DESC, i.name
+		LIMIT $5 OFFSET $6`
+
+	rows, err := r.pool.Query(ctx, q, businessID, outletID, f.Query, f.LowOnly,
+		f.PerPage, (f.Page-1)*f.PerPage)
+	if err != nil {
+		return nil, 0, fmt.Errorf("stockLevels: %w", err)
+	}
+	defer rows.Close()
+
+	items := []StockLevel{}
+	total := 0
+	for rows.Next() {
+		var s StockLevel
+		if err := rows.Scan(&s.IngredientID, &s.Code, &s.Name, &s.BaseUnitCode,
+			&s.QuantityOnHand, &s.MinStock, &s.AvgUnitCost, &s.StockValue, &s.IsLow, &total); err != nil {
+			return nil, 0, fmt.Errorf("stockLevels: scan: %w", err)
+		}
+		items = append(items, s)
+	}
+	return items, total, rows.Err()
+}
+
+// AdjustSettings membaca ambang persetujuan dan izin self-approval penyesuaian stok.
+func (r *Repository) AdjustSettings(ctx context.Context, outletID string) (threshold string, allowSelf bool, err error) {
+	const q = `SELECT adjustment_approval_threshold::text, allow_self_approval_adjustment
+	           FROM outlet_settings WHERE outlet_id = $1`
+	err = r.pool.QueryRow(ctx, q, outletID).Scan(&threshold, &allowSelf)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "500000.00", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("adjustSettings: %w", err)
+	}
+	return threshold, allowSelf, nil
+}
+
+// CurrentStock membaca saldo dan biaya rata-rata terkini satu bahan.
+func (r *Repository) CurrentStock(ctx context.Context, outletID, ingredientID string) (qty, avg string, found bool, err error) {
+	const q = `SELECT quantity_on_hand::text, avg_unit_cost::text
+	           FROM inventory WHERE outlet_id = $1 AND ingredient_id = $2`
+	err = r.pool.QueryRow(ctx, q, outletID, ingredientID).Scan(&qty, &avg)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "0", "0", true, nil
+	}
+	if err != nil {
+		return "", "", false, fmt.Errorf("currentStock: %w", err)
+	}
+	return qty, avg, true, nil
+}
+
+// IngredientExists memastikan bahan milik bisnis yang benar.
+func (r *Repository) IngredientExists(ctx context.Context, businessID, ingredientID string) (bool, error) {
+	var ok bool
+	err := r.pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM ingredients WHERE id = $1 AND business_id = $2)`,
+		ingredientID, businessID).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("ingredientExists: %w", err)
+	}
+	return ok, nil
+}
+
+// Adjust menulis movement ADJUSTMENT dan memperbarui saldo dalam satu transaksi.
+func (r *Repository) Adjust(ctx context.Context, outletID, ingredientID, userID, deltaStr, reason string, note *string) (string, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return "", fmt.Errorf("adjust: begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO inventory (outlet_id, ingredient_id) VALUES ($1, $2)
+		ON CONFLICT (outlet_id, ingredient_id) DO NOTHING`, outletID, ingredientID); err != nil {
+		return "", fmt.Errorf("adjust: ensure inventory: %w", err)
+	}
+
+	var qtyStr, avgStr string
+	if err := tx.QueryRow(ctx, `
+		SELECT quantity_on_hand::text, avg_unit_cost::text
+		FROM inventory WHERE outlet_id = $1 AND ingredient_id = $2 FOR UPDATE`,
+		outletID, ingredientID).Scan(&qtyStr, &avgStr); err != nil {
+		return "", fmt.Errorf("adjust: lock: %w", err)
+	}
+
+	delta, err := money.Parse(deltaStr)
+	if err != nil {
+		return "", err
+	}
+	qty, err := money.Parse(qtyStr)
+	if err != nil {
+		return "", err
+	}
+	avg, err := money.Parse(avgStr)
+	if err != nil {
+		return "", err
+	}
+
+	balance := qty.Add(delta)
+	totalCost := money.RoundHalfUp(delta.Mul(avg), 2)
+
+	reasonText := reason
+	if note != nil && strings.TrimSpace(*note) != "" {
+		reasonText = reason + ": " + strings.TrimSpace(*note)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO stock_movements (outlet_id, ingredient_id, movement_type, quantity_delta,
+		                             unit_cost, total_cost, balance_after, avg_cost_after,
+		                             reference_type, reason, created_by)
+		VALUES ($1, $2, 'ADJUSTMENT', $3, $4, $5, $6, $4, 'MANUAL', $7, $8)`,
+		outletID, ingredientID, delta.StringFixed(4), avg.StringFixed(6),
+		money.Format(totalCost), balance.StringFixed(4), reasonText, userID); err != nil {
+		return "", fmt.Errorf("adjust: movement: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE inventory SET quantity_on_hand = $3, last_movement_at = now(),
+		       version = version + 1, updated_at = now()
+		WHERE outlet_id = $1 AND ingredient_id = $2`,
+		outletID, ingredientID, balance.StringFixed(4)); err != nil {
+		return "", fmt.Errorf("adjust: update: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return "", fmt.Errorf("adjust: commit: %w", err)
+	}
+	return balance.StringFixed(4), nil
 }

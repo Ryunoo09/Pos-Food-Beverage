@@ -167,6 +167,9 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("POST /api/v1/ingredients/{id}/deactivate", authed(perm("ingredients.update")(inventoryHandler.SetIngredientActive(false))))
 	mux.Handle("POST /api/v1/ingredients/{id}/activate", authed(perm("ingredients.update")(inventoryHandler.SetIngredientActive(true))))
 	mux.Handle("GET /api/v1/ingredients/{id}/movements", authed(perm("inventory.view")(http.HandlerFunc(inventoryHandler.Movements))))
+	mux.Handle("GET /api/v1/inventory", authed(perm("inventory.view")(http.HandlerFunc(inventoryHandler.Stock))))
+	mux.Handle("GET /api/v1/inventory/{ingredientId}/movements", authed(perm("stock_movements.view")(http.HandlerFunc(inventoryHandler.StockMovements))))
+	mux.Handle("POST /api/v1/inventory/{ingredientId}/adjust", authed(perm("inventory.adjust")(http.HandlerFunc(inventoryHandler.Adjust))))
 
 	supplierHandler := supplier.NewHandler(supplier.NewService(supplier.NewRepository(pool)))
 	mux.Handle("GET /api/v1/suppliers", authed(perm("suppliers.view")(http.HandlerFunc(supplierHandler.List))))

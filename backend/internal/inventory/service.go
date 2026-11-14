@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/shopspring/decimal"
 
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/auth"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/httpx"
@@ -144,6 +145,115 @@ func (s *Service) Movements(ctx context.Context, actor auth.Actor, ingredientID 
 			"Outlet belum dikonfigurasi.")
 	}
 	return s.repo.Movements(ctx, actor.OutletID, ingredientID, 100)
+}
+
+// Stock mengembalikan saldo stok per bahan; biaya disembunyikan tanpa inventory.view_cost.
+func (s *Service) Stock(ctx context.Context, actor auth.Actor, f StockFilter) ([]StockLevel, int, error) {
+	if actor.OutletID == "" {
+		return nil, 0, httpx.NewError(http.StatusUnprocessableEntity, "OUTLET_NOT_CONFIGURED",
+			"Outlet belum dikonfigurasi.")
+	}
+	f.Query = strings.TrimSpace(f.Query)
+	items, total, err := s.repo.StockLevels(ctx, actor.BusinessID, actor.OutletID, f)
+	if err != nil {
+		return nil, 0, err
+	}
+	if !hasPermission(actor, "inventory.view_cost") {
+		for i := range items {
+			items[i].AvgUnitCost = ""
+			items[i].StockValue = ""
+		}
+	}
+	return items, total, nil
+}
+
+// AdjustResult adalah saldo setelah penyesuaian manual.
+type AdjustResult struct {
+	IngredientID   string `json:"ingredient_id"`
+	QuantityOnHand string `json:"quantity_on_hand"`
+}
+
+// Adjust menyesuaikan saldo stok manual. Nilai penyesuaian di atas ambang
+// (BR-F09-2) butuh permission inventory.approve_adjustment.
+func (s *Service) Adjust(ctx context.Context, actor auth.Actor, ingredientID string, in AdjustInput) (*AdjustResult, error) {
+	if actor.OutletID == "" {
+		return nil, httpx.NewError(http.StatusUnprocessableEntity, "OUTLET_NOT_CONFIGURED",
+			"Outlet belum dikonfigurasi.")
+	}
+	reason := strings.TrimSpace(in.Reason)
+	if reason == "" {
+		return nil, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR", "reason wajib diisi.")
+	}
+	delta, err := money.Parse(strings.TrimSpace(in.QuantityDelta))
+	if err != nil {
+		return nil, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR", "quantity_delta tidak valid.")
+	}
+	if delta.IsZero() {
+		return nil, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR", "quantity_delta tidak boleh nol.")
+	}
+	exists, err := s.repo.IngredientExists(ctx, actor.BusinessID, ingredientID)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, ingredientNotFound()
+	}
+
+	qtyStr, avgStr, _, err := s.repo.CurrentStock(ctx, actor.OutletID, ingredientID)
+	if err != nil {
+		return nil, err
+	}
+	threshold, allowSelf, err := s.repo.AdjustSettings(ctx, actor.OutletID)
+	if err != nil {
+		return nil, err
+	}
+	qty, err := money.Parse(qtyStr)
+	if err != nil {
+		return nil, err
+	}
+	avg, err := money.Parse(avgStr)
+	if err != nil {
+		return nil, err
+	}
+	limit, err := money.Parse(threshold)
+	if err != nil {
+		return nil, err
+	}
+
+	value := delta.Abs().Mul(avg)
+	needsApproval := needsAdjustmentApproval(delta, qty, value, limit)
+	if needsApproval && !hasPermission(actor, "inventory.approve_adjustment") && !allowSelf {
+		return nil, httpx.Errorf(http.StatusUnprocessableEntity, "ADJUSTMENT_APPROVAL_REQUIRED",
+			"Penyesuaian di atas ambang butuh persetujuan manager.", map[string]string{
+				"threshold_amount": threshold,
+				"adjustment_value": money.Format(value),
+			})
+	}
+
+	balance, err := s.repo.Adjust(ctx, actor.OutletID, ingredientID, actor.UserID,
+		delta.String(), reason, in.Note)
+	if err != nil {
+		return nil, err
+	}
+	return &AdjustResult{IngredientID: ingredientID, QuantityOnHand: balance}, nil
+}
+
+func hasPermission(actor auth.Actor, code string) bool {
+	for _, p := range actor.Permissions {
+		if p == code {
+			return true
+		}
+	}
+	return false
+}
+
+// needsAdjustmentApproval menerapkan BR-F09-2: nilai penyesuaian di atas ambang
+// ATAU lebih dari 20% saldo saat ini butuh persetujuan manager.
+func needsAdjustmentApproval(delta, qty, value, limit money.Decimal) bool {
+	if value.GreaterThan(limit) {
+		return true
+	}
+	return !qty.IsZero() && delta.Abs().Div(qty.Abs()).GreaterThan(decimal.RequireFromString("0.20"))
 }
 
 func (s *Service) validateIngredient(ctx context.Context, businessID string, in IngredientInput) (IngredientInput, error) {

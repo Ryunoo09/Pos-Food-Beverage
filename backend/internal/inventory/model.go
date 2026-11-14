@@ -69,3 +69,30 @@ type StockMovement struct {
 	Reason        *string   `json:"reason,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 }
+
+// StockLevel adalah saldo stok terkini satu bahan pada satu outlet.
+type StockLevel struct {
+	IngredientID   string `json:"ingredient_id"`
+	Code           string `json:"code"`
+	Name           string `json:"name"`
+	BaseUnitCode   string `json:"base_unit_code"`
+	QuantityOnHand string `json:"quantity_on_hand"`
+	MinStock       string `json:"min_stock"`
+	IsLow          bool   `json:"is_low"`
+	AvgUnitCost    string `json:"avg_unit_cost,omitempty"`
+	StockValue     string `json:"stock_value,omitempty"`
+}
+
+type StockFilter struct {
+	Query   string
+	LowOnly bool
+	Page    int
+	PerPage int
+}
+
+// AdjustInput menyesuaikan saldo stok secara manual; alasan wajib.
+type AdjustInput struct {
+	QuantityDelta string  `json:"quantity_delta"`
+	Reason        string  `json:"reason"`
+	Note          *string `json:"note"`
+}
