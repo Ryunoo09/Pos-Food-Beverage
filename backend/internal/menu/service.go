@@ -334,3 +334,91 @@ func hasPermission(list []string, want string) bool {
 	}
 	return false
 }
+
+func (s *Service) ListModifierGroups(ctx context.Context, businessID string) ([]ModifierGroup, error) {
+	return s.repo.ListModifierGroups(ctx, businessID)
+}
+
+func (s *Service) ModifierGroup(ctx context.Context, businessID, id string) (*ModifierGroup, error) {
+	g, err := s.repo.ModifierGroup(ctx, businessID, id)
+	if errors.Is(err, ErrNotFound) {
+		return nil, modifierGroupNotFound()
+	}
+	return g, err
+}
+
+func (s *Service) CreateModifierGroup(ctx context.Context, businessID string, in ModifierGroupInput) (*ModifierGroup, error) {
+	in, err := validateModifierGroup(in)
+	if err != nil {
+		return nil, err
+	}
+
+	g, err := s.repo.CreateModifierGroup(ctx, businessID, in)
+	if errors.Is(err, ErrNotFound) {
+		return nil, modifierGroupNotFound()
+	}
+	return g, err
+}
+
+func (s *Service) UpdateModifierGroup(ctx context.Context, businessID, id string, in ModifierGroupInput) (*ModifierGroup, error) {
+	in, err := validateModifierGroup(in)
+	if err != nil {
+		return nil, err
+	}
+
+	g, err := s.repo.UpdateModifierGroup(ctx, businessID, id, in, activeOr(in.IsActive, true))
+	if errors.Is(err, ErrNotFound) {
+		return nil, modifierGroupNotFound()
+	}
+	return g, err
+}
+
+func (s *Service) SetModifierGroupActive(ctx context.Context, businessID, id string, active bool) error {
+	err := s.repo.SetModifierGroupActive(ctx, businessID, id, active)
+	if errors.Is(err, ErrNotFound) {
+		return modifierGroupNotFound()
+	}
+	return err
+}
+
+func (s *Service) SetProductModifierGroups(ctx context.Context, businessID, productID string, groupIDs []string) error {
+	err := s.repo.SetProductModifierGroups(ctx, businessID, productID, groupIDs)
+	if errors.Is(err, ErrNotFound) {
+		return httpx.NewError(http.StatusUnprocessableEntity, "MODIFIER_GROUP_NOT_FOUND",
+			"Produk atau grup modifier tidak ditemukan.")
+	}
+	return err
+}
+
+func validateModifierGroup(in ModifierGroupInput) (ModifierGroupInput, error) {
+	in.Name = strings.TrimSpace(in.Name)
+	if in.Name == "" {
+		return in, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR", "Nama grup modifier wajib diisi.")
+	}
+	if in.MinSelect < 0 || in.MaxSelect < in.MinSelect {
+		return in, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR",
+			"min_select tidak boleh negatif dan tidak boleh lebih dari max_select.")
+	}
+	if in.IsRequired && in.MaxSelect == 0 {
+		return in, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR",
+			"Grup wajib harus punya max_select minimal 1.")
+	}
+
+	for i := range in.Options {
+		o := &in.Options[i]
+		o.Name = strings.TrimSpace(o.Name)
+		if o.Name == "" {
+			return in, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR", "Nama opsi modifier wajib diisi.")
+		}
+		delta, err := money.Parse(o.PriceDelta)
+		if err != nil {
+			return in, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR", "price_delta tidak valid.")
+		}
+		o.PriceDelta = money.Format(delta)
+	}
+	return in, nil
+}
+
+func modifierGroupNotFound() error {
+	return httpx.NewError(http.StatusNotFound, "MODIFIER_GROUP_NOT_FOUND", "Grup modifier tidak ditemukan.")
+}

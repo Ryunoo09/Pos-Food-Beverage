@@ -136,6 +136,14 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("PATCH /api/v1/variants/{id}", authed(perm("products.update")(http.HandlerFunc(menuHandler.UpdateVariant))))
 	mux.Handle("PATCH /api/v1/products/{id}/availability", authed(perm("products.set_availability")(http.HandlerFunc(menuHandler.SetAvailability))))
 
+	mux.Handle("GET /api/v1/modifier-groups", authed(perm("products.view")(http.HandlerFunc(menuHandler.ListModifierGroups))))
+	mux.Handle("GET /api/v1/modifier-groups/{id}", authed(perm("products.view")(http.HandlerFunc(menuHandler.GetModifierGroup))))
+	mux.Handle("POST /api/v1/modifier-groups", authed(perm("modifiers.manage")(http.HandlerFunc(menuHandler.CreateModifierGroup))))
+	mux.Handle("PATCH /api/v1/modifier-groups/{id}", authed(perm("modifiers.manage")(http.HandlerFunc(menuHandler.UpdateModifierGroup))))
+	mux.Handle("POST /api/v1/modifier-groups/{id}/deactivate", authed(perm("modifiers.manage")(menuHandler.SetModifierGroupActive(false))))
+	mux.Handle("POST /api/v1/modifier-groups/{id}/activate", authed(perm("modifiers.manage")(menuHandler.SetModifierGroupActive(true))))
+	mux.Handle("PUT /api/v1/products/{id}/modifier-groups", authed(perm("products.update")(http.HandlerFunc(menuHandler.SetProductModifierGroups))))
+
 	return handlerChain(mux, logger)
 }
 

@@ -76,3 +76,41 @@ type VariantInput struct {
 	IsActive  *bool  `json:"is_active"`
 	SortOrder int    `json:"sort_order"`
 }
+
+type ModifierGroup struct {
+	ID         string           `json:"id"`
+	Name       string           `json:"name"`
+	MinSelect  int              `json:"min_select"`
+	MaxSelect  int              `json:"max_select"`
+	IsRequired bool             `json:"is_required"`
+	SortOrder  int              `json:"sort_order"`
+	IsActive   bool             `json:"is_active"`
+	Options    []ModifierOption `json:"options"`
+}
+
+type ModifierOption struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	PriceDelta string `json:"price_delta"`
+	IsDefault  bool   `json:"is_default"`
+	IsActive   bool   `json:"is_active"`
+	SortOrder  int    `json:"sort_order"`
+}
+
+type ModifierGroupInput struct {
+	Name       string                `json:"name"`
+	MinSelect  int                   `json:"min_select"`
+	MaxSelect  int                   `json:"max_select"`
+	IsRequired bool                  `json:"is_required"`
+	SortOrder  int                   `json:"sort_order"`
+	IsActive   *bool                 `json:"is_active"`
+	Options    []ModifierOptionInput `json:"options"`
+}
+
+type ModifierOptionInput struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	PriceDelta string `json:"price_delta"`
+	IsDefault  bool   `json:"is_default"`
+	SortOrder  int    `json:"sort_order"`
+}

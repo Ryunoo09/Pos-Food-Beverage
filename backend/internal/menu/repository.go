@@ -349,3 +349,239 @@ func (r *Repository) Variant(ctx context.Context, businessID, variantID string) 
 	}
 	return v, nil
 }
+
+func (r *Repository) ListModifierGroups(ctx context.Context, businessID string) ([]ModifierGroup, error) {
+	const q = `
+		SELECT id, name, min_select, max_select, is_required, sort_order, is_active
+		FROM modifier_groups
+		WHERE business_id = $1
+		ORDER BY sort_order, name`
+
+	rows, err := r.pool.Query(ctx, q, businessID)
+	if err != nil {
+		return nil, fmt.Errorf("listModifierGroups: %w", err)
+	}
+	defer rows.Close()
+
+	items := []ModifierGroup{}
+	for rows.Next() {
+		var g ModifierGroup
+		if err := rows.Scan(&g.ID, &g.Name, &g.MinSelect, &g.MaxSelect,
+			&g.IsRequired, &g.SortOrder, &g.IsActive); err != nil {
+			return nil, fmt.Errorf("scan modifier group: %w", err)
+		}
+		items = append(items, g)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	for i := range items {
+		options, err := r.modifierOptions(ctx, items[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		items[i].Options = options
+	}
+	return items, nil
+}
+
+func (r *Repository) ModifierGroup(ctx context.Context, businessID, id string) (*ModifierGroup, error) {
+	const q = `
+		SELECT id, name, min_select, max_select, is_required, sort_order, is_active
+		FROM modifier_groups
+		WHERE id = $1 AND business_id = $2`
+
+	g := &ModifierGroup{}
+	err := r.pool.QueryRow(ctx, q, id, businessID).Scan(&g.ID, &g.Name, &g.MinSelect,
+		&g.MaxSelect, &g.IsRequired, &g.SortOrder, &g.IsActive)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("modifierGroup: %w", err)
+	}
+
+	options, err := r.modifierOptions(ctx, g.ID)
+	if err != nil {
+		return nil, err
+	}
+	g.Options = options
+	return g, nil
+}
+
+func (r *Repository) modifierOptions(ctx context.Context, groupID string) ([]ModifierOption, error) {
+	const q = `
+		SELECT id, name, price_delta::text, is_default, is_active, sort_order
+		FROM modifier_options
+		WHERE group_id = $1
+		ORDER BY sort_order, name`
+
+	rows, err := r.pool.Query(ctx, q, groupID)
+	if err != nil {
+		return nil, fmt.Errorf("modifierOptions: %w", err)
+	}
+	defer rows.Close()
+
+	items := []ModifierOption{}
+	for rows.Next() {
+		var o ModifierOption
+		if err := rows.Scan(&o.ID, &o.Name, &o.PriceDelta, &o.IsDefault, &o.IsActive, &o.SortOrder); err != nil {
+			return nil, fmt.Errorf("scan modifier option: %w", err)
+		}
+		items = append(items, o)
+	}
+	return items, rows.Err()
+}
+
+func (r *Repository) CreateModifierGroup(ctx context.Context, businessID string, in ModifierGroupInput) (*ModifierGroup, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("createModifierGroup: begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	const q = `
+		INSERT INTO modifier_groups (business_id, name, min_select, max_select, is_required, sort_order)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id`
+
+	var id string
+	if err := tx.QueryRow(ctx, q, businessID, in.Name, in.MinSelect, in.MaxSelect,
+		in.IsRequired, in.SortOrder).Scan(&id); err != nil {
+		return nil, fmt.Errorf("createModifierGroup: %w", err)
+	}
+
+	for _, o := range in.Options {
+		const insert = `
+			INSERT INTO modifier_options (group_id, name, price_delta, is_default, sort_order)
+			VALUES ($1, $2, $3, $4, $5)`
+		if _, err := tx.Exec(ctx, insert, id, o.Name, o.PriceDelta, o.IsDefault, o.SortOrder); err != nil {
+			return nil, fmt.Errorf("createModifierGroup: option: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("createModifierGroup: commit: %w", err)
+	}
+	return r.ModifierGroup(ctx, businessID, id)
+}
+
+func (r *Repository) UpdateModifierGroup(ctx context.Context, businessID, id string, in ModifierGroupInput, isActive bool) (*ModifierGroup, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("updateModifierGroup: begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	const q = `
+		UPDATE modifier_groups
+		SET name = $3, min_select = $4, max_select = $5, is_required = $6,
+		    sort_order = $7, is_active = $8, updated_at = now()
+		WHERE id = $1 AND business_id = $2
+		RETURNING id`
+
+	var updated string
+	err = tx.QueryRow(ctx, q, id, businessID, in.Name, in.MinSelect, in.MaxSelect,
+		in.IsRequired, in.SortOrder, isActive).Scan(&updated)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("updateModifierGroup: %w", err)
+	}
+
+	kept := make([]string, 0, len(in.Options))
+	for _, o := range in.Options {
+		if o.ID == "" {
+			const insert = `
+				INSERT INTO modifier_options (group_id, name, price_delta, is_default, sort_order)
+				VALUES ($1, $2, $3, $4, $5)`
+			if _, err := tx.Exec(ctx, insert, id, o.Name, o.PriceDelta, o.IsDefault, o.SortOrder); err != nil {
+				return nil, fmt.Errorf("updateModifierGroup: insert option: %w", err)
+			}
+			continue
+		}
+		const update = `
+			UPDATE modifier_options
+			SET name = $3, price_delta = $4, is_default = $5, sort_order = $6,
+			    is_active = true, updated_at = now()
+			WHERE id = $1 AND group_id = $2`
+		tag, err := tx.Exec(ctx, update, o.ID, id, o.Name, o.PriceDelta, o.IsDefault, o.SortOrder)
+		if err != nil {
+			return nil, fmt.Errorf("updateModifierGroup: update option: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return nil, ErrNotFound
+		}
+		kept = append(kept, o.ID)
+	}
+
+	const deactivate = `
+		UPDATE modifier_options SET is_active = false, updated_at = now()
+		WHERE group_id = $1 AND NOT (id = ANY($2::uuid[]))`
+	if _, err := tx.Exec(ctx, deactivate, id, kept); err != nil {
+		return nil, fmt.Errorf("updateModifierGroup: deactivate options: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("updateModifierGroup: commit: %w", err)
+	}
+	return r.ModifierGroup(ctx, businessID, id)
+}
+
+func (r *Repository) SetModifierGroupActive(ctx context.Context, businessID, id string, active bool) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE modifier_groups SET is_active = $3, updated_at = now() WHERE id = $1 AND business_id = $2`,
+		id, businessID, active)
+	if err != nil {
+		return fmt.Errorf("setModifierGroupActive: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *Repository) SetProductModifierGroups(ctx context.Context, businessID, productID string, groupIDs []string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("setProductModifierGroups: begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var exists bool
+	if err := tx.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM products WHERE id = $1 AND business_id = $2)`,
+		productID, businessID).Scan(&exists); err != nil {
+		return fmt.Errorf("setProductModifierGroups: product: %w", err)
+	}
+	if !exists {
+		return ErrNotFound
+	}
+
+	var valid int
+	if err := tx.QueryRow(ctx,
+		`SELECT count(*)::int FROM modifier_groups WHERE business_id = $1 AND id = ANY($2::uuid[])`,
+		businessID, groupIDs).Scan(&valid); err != nil {
+		return fmt.Errorf("setProductModifierGroups: groups: %w", err)
+	}
+	if valid != len(groupIDs) {
+		return ErrNotFound
+	}
+
+	if _, err := tx.Exec(ctx, `DELETE FROM product_modifier_groups WHERE product_id = $1`, productID); err != nil {
+		return fmt.Errorf("setProductModifierGroups: clear: %w", err)
+	}
+	for i, groupID := range groupIDs {
+		const insert = `INSERT INTO product_modifier_groups (product_id, modifier_group_id, sort_order) VALUES ($1, $2, $3)`
+		if _, err := tx.Exec(ctx, insert, productID, groupID, i); err != nil {
+			return fmt.Errorf("setProductModifierGroups: insert: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("setProductModifierGroups: commit: %w", err)
+	}
+	return nil
+}

@@ -272,3 +272,95 @@ func (h *Handler) SetAvailability(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+func (h *Handler) ListModifierGroups(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	items, err := h.svc.ListModifierGroups(r.Context(), actor.BusinessID)
+	if err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, items, requestID)
+}
+
+func (h *Handler) GetModifierGroup(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	item, err := h.svc.ModifierGroup(r.Context(), actor.BusinessID, r.PathValue("id"))
+	if err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, item, requestID)
+}
+
+func (h *Handler) CreateModifierGroup(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	var in ModifierGroupInput
+	if err := httpx.DecodeJSON(w, r, &in); err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+
+	item, err := h.svc.CreateModifierGroup(r.Context(), actor.BusinessID, in)
+	if err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	httpx.WriteData(w, http.StatusCreated, item, requestID)
+}
+
+func (h *Handler) UpdateModifierGroup(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	var in ModifierGroupInput
+	if err := httpx.DecodeJSON(w, r, &in); err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+
+	item, err := h.svc.UpdateModifierGroup(r.Context(), actor.BusinessID, r.PathValue("id"), in)
+	if err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, item, requestID)
+}
+
+func (h *Handler) SetModifierGroupActive(active bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		actor, _ := auth.ActorFrom(r.Context())
+		requestID := httpx.RequestIDFrom(r.Context())
+
+		if err := h.svc.SetModifierGroupActive(r.Context(), actor.BusinessID, r.PathValue("id"), active); err != nil {
+			httpx.WriteError(w, err, requestID)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func (h *Handler) SetProductModifierGroups(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	var body struct {
+		GroupIDs []string `json:"group_ids"`
+	}
+	if err := httpx.DecodeJSON(w, r, &body); err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+
+	if err := h.svc.SetProductModifierGroups(r.Context(), actor.BusinessID, r.PathValue("id"), body.GroupIDs); err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
