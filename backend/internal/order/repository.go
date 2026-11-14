@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/pkg/money"
 )
 
 var ErrNotFound = errors.New("pesanan tidak ditemukan")
@@ -513,6 +516,154 @@ func (r *Repository) ReleaseIdempotency(ctx context.Context, scope, key string) 
 		return fmt.Errorf("releaseIdempotency: %w", err)
 	}
 	return nil
+}
+
+// KitchenStarted melaporkan apakah ada item pesanan yang sudah mulai dimasak.
+func (r *Repository) KitchenStarted(ctx context.Context, tx pgx.Tx, orderID string) (bool, error) {
+	var started bool
+	err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM kitchen_order_items koi
+			JOIN kitchen_orders ko ON ko.id = koi.kitchen_order_id
+			WHERE ko.order_id = $1 AND koi.status IN ('COOKING', 'READY', 'SERVED')
+		)`, orderID).Scan(&started)
+	if err != nil {
+		return false, fmt.Errorf("kitchenStarted: %w", err)
+	}
+	return started, nil
+}
+
+// ReverseConsumption mengembalikan stok bahan pesanan lewat movement SALE_REVERSAL.
+func (r *Repository) ReverseConsumption(ctx context.Context, tx pgx.Tx, outletID, orderID, userID string) error {
+	const q = `
+		SELECT oic.id, oic.ingredient_id::text,
+		       (oic.quantity_base - oic.reversed_quantity_base)::text, oic.unit_cost::text
+		FROM order_item_consumptions oic
+		JOIN order_items oi ON oi.id = oic.order_item_id
+		WHERE oi.order_id = $1 AND oic.quantity_base > oic.reversed_quantity_base`
+
+	rows, err := tx.Query(ctx, q, orderID)
+	if err != nil {
+		return fmt.Errorf("reverseConsumption: query: %w", err)
+	}
+	type row struct {
+		id       string
+		ingID    string
+		qty      money.Decimal
+		unitCost money.Decimal
+	}
+	pending := []row{}
+	perIngredient := map[string]money.Decimal{}
+	for rows.Next() {
+		var rr row
+		var qtyStr, costStr string
+		if err := rows.Scan(&rr.id, &rr.ingID, &qtyStr, &costStr); err != nil {
+			rows.Close()
+			return fmt.Errorf("reverseConsumption: scan: %w", err)
+		}
+		if rr.qty, err = money.Parse(qtyStr); err != nil {
+			rows.Close()
+			return err
+		}
+		if rr.unitCost, err = money.Parse(costStr); err != nil {
+			rows.Close()
+			return err
+		}
+		pending = append(pending, rr)
+		perIngredient[rr.ingID] = perIngredient[rr.ingID].Add(rr.qty)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	ingredients := make([]string, 0, len(perIngredient))
+	for id := range perIngredient {
+		ingredients = append(ingredients, id)
+	}
+	sort.Strings(ingredients)
+
+	for _, ingID := range ingredients {
+		back := perIngredient[ingID]
+		if !back.IsPositive() {
+			continue
+		}
+		var onHandStr, avgStr string
+		const lock = `SELECT quantity_on_hand::text, avg_unit_cost::text
+		              FROM inventory WHERE outlet_id = $1 AND ingredient_id = $2 FOR UPDATE`
+		if err := tx.QueryRow(ctx, lock, outletID, ingID).Scan(&onHandStr, &avgStr); err != nil {
+			return fmt.Errorf("reverseConsumption: lock: %w", err)
+		}
+		onHand, err := money.Parse(onHandStr)
+		if err != nil {
+			return err
+		}
+		avg, err := money.Parse(avgStr)
+		if err != nil {
+			return err
+		}
+		balance := onHand.Add(back)
+		totalCost := money.RoundHalfUp(back.Mul(avg), 2)
+
+		const movement = `
+			INSERT INTO stock_movements (outlet_id, ingredient_id, movement_type, quantity_delta,
+			                             unit_cost, total_cost, balance_after, avg_cost_after,
+			                             reference_type, reference_id, created_by)
+			VALUES ($1, $2, 'SALE_REVERSAL', $3, $4, $5, $6, $4, 'ORDER', $7, $8)`
+		if _, err := tx.Exec(ctx, movement, outletID, ingID, back.StringFixed(4),
+			avg.StringFixed(6), money.Format(totalCost), balance.StringFixed(4),
+			orderID, userID); err != nil {
+			return fmt.Errorf("reverseConsumption: movement: %w", err)
+		}
+		const update = `
+			UPDATE inventory SET quantity_on_hand = $3, last_movement_at = now(),
+			       version = version + 1, updated_at = now()
+			WHERE outlet_id = $1 AND ingredient_id = $2`
+		if _, err := tx.Exec(ctx, update, outletID, ingID, balance.StringFixed(4)); err != nil {
+			return fmt.Errorf("reverseConsumption: update: %w", err)
+		}
+	}
+
+	for _, rr := range pending {
+		const mark = `UPDATE order_item_consumptions SET reversed_quantity_base = quantity_base WHERE id = $1`
+		if _, err := tx.Exec(ctx, mark, rr.id); err != nil {
+			return fmt.Errorf("reverseConsumption: mark: %w", err)
+		}
+	}
+	return nil
+}
+
+// VoidKitchen menandai tiket dapur terkait pesanan sebagai VOID.
+func (r *Repository) VoidKitchen(ctx context.Context, tx pgx.Tx, orderID string) error {
+	if _, err := tx.Exec(ctx, `UPDATE kitchen_orders SET status = 'VOID' WHERE order_id = $1`, orderID); err != nil {
+		return fmt.Errorf("voidKitchen: orders: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE kitchen_order_items koi SET status = 'VOID'
+		FROM kitchen_orders ko
+		WHERE ko.id = koi.kitchen_order_id AND ko.order_id = $1`, orderID); err != nil {
+		return fmt.Errorf("voidKitchen: items: %w", err)
+	}
+	return nil
+}
+
+// SetCancelled mengubah pesanan menjadi CANCELLED bila belum final.
+func (r *Repository) SetCancelled(ctx context.Context, tx pgx.Tx, orderID, userID, code string, note *string) (bool, error) {
+	const q = `
+		UPDATE orders
+		SET status = 'CANCELLED', cancelled_by = $2, cancelled_at = now(),
+		    cancel_reason_code = $3, cancel_reason_note = $4, version = version + 1, updated_at = now()
+		WHERE id = $1 AND status NOT IN ('COMPLETED', 'CANCELLED')
+		RETURNING id`
+	var id string
+	err := tx.QueryRow(ctx, q, orderID, userID, code, note).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("setCancelled: %w", err)
+	}
+	return true, nil
 }
 
 // AllowNegativeStock membaca setelan outlet; default true bila baris tidak ada.

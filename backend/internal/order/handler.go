@@ -131,6 +131,26 @@ func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteData(w, http.StatusOK, o, requestID)
 }
 
+func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	var in CancelInput
+	if r.ContentLength != 0 {
+		if err := httpx.DecodeJSON(w, r, &in); err != nil {
+			httpx.WriteError(w, err, requestID)
+			return
+		}
+	}
+
+	o, err := h.svc.Cancel(r.Context(), actor, r.PathValue("id"), in)
+	if err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, o, requestID)
+}
+
 func pagination(r *http.Request) (int, int) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))

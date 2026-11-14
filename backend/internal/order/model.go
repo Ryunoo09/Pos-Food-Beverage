@@ -97,6 +97,11 @@ type UpdateItemInput struct {
 	Note     *string `json:"note"`
 }
 
+type CancelInput struct {
+	ReasonCode string  `json:"reason_code"`
+	Note       *string `json:"note"`
+}
+
 type Filter struct {
 	Status  *string
 	Query   string

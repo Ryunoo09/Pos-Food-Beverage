@@ -152,6 +152,61 @@ func (s *Service) Confirm(ctx context.Context, actor auth.Actor, orderID, key st
 	return o, nil
 }
 
+// Cancel membatalkan pesanan yang belum mulai dimasak dan mengembalikan stok.
+func (s *Service) Cancel(ctx context.Context, actor auth.Actor, orderID string, in CancelInput) (*Order, error) {
+	if actor.OutletID == "" {
+		return nil, outletMissing()
+	}
+	o, err := s.repo.Order(ctx, actor.OutletID, orderID)
+	if errors.Is(err, ErrNotFound) {
+		return nil, notFound()
+	}
+	if err != nil {
+		return nil, err
+	}
+	if o.Status == "CANCELLED" || o.Status == "COMPLETED" {
+		return nil, httpx.NewError(http.StatusConflict, "ORDER_NOT_CANCELLABLE",
+			"Pesanan sudah selesai atau dibatalkan.")
+	}
+
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	started, err := s.repo.KitchenStarted(ctx, tx, o.ID)
+	if err != nil {
+		return nil, err
+	}
+	if started {
+		return nil, httpx.NewError(http.StatusUnprocessableEntity, "ORDER_ALREADY_PREPARING",
+			"Pesanan sudah mulai dimasak; pembatalan butuh persetujuan manager.")
+	}
+
+	if err := s.repo.ReverseConsumption(ctx, tx, actor.OutletID, o.ID, actor.UserID); err != nil {
+		return nil, err
+	}
+	if err := s.repo.VoidKitchen(ctx, tx, o.ID); err != nil {
+		return nil, err
+	}
+	ok, err := s.repo.SetCancelled(ctx, tx, o.ID, actor.UserID, strings.TrimSpace(in.ReasonCode), in.Note)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, httpx.NewError(http.StatusConflict, "ORDER_NOT_CANCELLABLE",
+			"Pesanan tidak bisa dibatalkan pada status saat ini.")
+	}
+	if err := s.repo.InsertStatusHistory(ctx, tx, o.ID, o.Status, "CANCELLED", actor.UserID); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return s.repo.Order(ctx, actor.OutletID, o.ID)
+}
+
 // confirm mengunci draft menjadi pesanan resmi: status, nomor order/antrean, dan
 // snapshot harga final disimpan atomik.
 func (s *Service) confirm(ctx context.Context, actor auth.Actor, orderID string) (*Order, error) {

@@ -207,6 +207,7 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("PATCH /api/v1/orders/{id}/items/{itemID}", authed(perm("orders.create")(http.HandlerFunc(orderHandler.UpdateItem))))
 	mux.Handle("DELETE /api/v1/orders/{id}/items/{itemID}", authed(perm("orders.create")(http.HandlerFunc(orderHandler.DeleteItem))))
 	mux.Handle("POST /api/v1/orders/{id}/confirm", authed(perm("orders.confirm")(http.HandlerFunc(orderHandler.Confirm))))
+	mux.Handle("POST /api/v1/orders/{id}/cancel", authed(perm("orders.cancel")(http.HandlerFunc(orderHandler.Cancel))))
 
 	return handlerChain(mux, logger)
 }
