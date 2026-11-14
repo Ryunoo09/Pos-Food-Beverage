@@ -242,8 +242,8 @@ func (s *Service) ListVariants(ctx context.Context, businessID, productID string
 	return s.repo.variants(ctx, productID)
 }
 
-func (s *Service) CreateVariant(ctx context.Context, businessID, productID string, in VariantInput) (*Variant, error) {
-	if _, err := s.Product(ctx, businessID, productID); err != nil {
+func (s *Service) CreateVariant(ctx context.Context, actor auth.Actor, productID string, in VariantInput) (*Variant, error) {
+	if _, err := s.Product(ctx, actor.BusinessID, productID); err != nil {
 		return nil, err
 	}
 
@@ -252,7 +252,7 @@ func (s *Service) CreateVariant(ctx context.Context, businessID, productID strin
 		return nil, err
 	}
 
-	v, err := s.repo.CreateVariant(ctx, productID, in)
+	v, err := s.repo.CreateVariant(ctx, actor.UserID, productID, in)
 	if err != nil {
 		return nil, mapProductError(err)
 	}
@@ -283,7 +283,7 @@ func (s *Service) UpdateVariant(ctx context.Context, actor auth.Actor, variantID
 		in.Price = current.Price
 	}
 
-	v, err := s.repo.UpdateVariant(ctx, actor.BusinessID, variantID, in, activeOr(in.IsActive, true))
+	v, err := s.repo.UpdateVariant(ctx, actor.BusinessID, actor.UserID, variantID, in, activeOr(in.IsActive, true))
 	if errors.Is(err, ErrNotFound) {
 		return nil, httpx.NewError(http.StatusNotFound, "VARIANT_NOT_FOUND", "Varian tidak ditemukan.")
 	}
@@ -421,4 +421,13 @@ func validateModifierGroup(in ModifierGroupInput) (ModifierGroupInput, error) {
 
 func modifierGroupNotFound() error {
 	return httpx.NewError(http.StatusNotFound, "MODIFIER_GROUP_NOT_FOUND", "Grup modifier tidak ditemukan.")
+}
+
+func (s *Service) PriceHistories(ctx context.Context, businessID, variantID string) ([]PriceHistory, error) {
+	if _, err := s.repo.Variant(ctx, businessID, variantID); errors.Is(err, ErrNotFound) {
+		return nil, httpx.NewError(http.StatusNotFound, "VARIANT_NOT_FOUND", "Varian tidak ditemukan.")
+	} else if err != nil {
+		return nil, err
+	}
+	return s.repo.PriceHistories(ctx, businessID, variantID)
 }

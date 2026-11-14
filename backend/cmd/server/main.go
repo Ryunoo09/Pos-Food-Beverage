@@ -134,6 +134,7 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("GET /api/v1/products/{id}/variants", authed(perm("products.view")(http.HandlerFunc(menuHandler.ListVariants))))
 	mux.Handle("POST /api/v1/products/{id}/variants", authed(perm("products.update")(http.HandlerFunc(menuHandler.CreateVariant))))
 	mux.Handle("PATCH /api/v1/variants/{id}", authed(perm("products.update")(http.HandlerFunc(menuHandler.UpdateVariant))))
+	mux.Handle("GET /api/v1/variants/{id}/price-history", authed(perm("products.view")(http.HandlerFunc(menuHandler.PriceHistories))))
 	mux.Handle("PATCH /api/v1/products/{id}/availability", authed(perm("products.set_availability")(http.HandlerFunc(menuHandler.SetAvailability))))
 
 	mux.Handle("GET /api/v1/modifier-groups", authed(perm("products.view")(http.HandlerFunc(menuHandler.ListModifierGroups))))

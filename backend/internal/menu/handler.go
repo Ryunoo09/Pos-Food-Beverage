@@ -223,7 +223,7 @@ func (h *Handler) CreateVariant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, err := h.svc.CreateVariant(r.Context(), actor.BusinessID, r.PathValue("id"), in)
+	item, err := h.svc.CreateVariant(r.Context(), actor, r.PathValue("id"), in)
 	if err != nil {
 		httpx.WriteError(w, err, requestID)
 		return
@@ -363,4 +363,16 @@ func (h *Handler) SetProductModifierGroups(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) PriceHistories(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	items, err := h.svc.PriceHistories(r.Context(), actor.BusinessID, r.PathValue("id"))
+	if err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, items, requestID)
 }

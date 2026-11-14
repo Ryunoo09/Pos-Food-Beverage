@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -226,9 +227,19 @@ func (r *Repository) CreateProduct(ctx context.Context, businessID, userID strin
 	for _, v := range in.Variants {
 		const insertVariant = `
 			INSERT INTO product_variants (product_id, name, sku_suffix, price, is_default, sort_order)
-			VALUES ($1, $2, $3, $4, $5, $6)`
-		if _, err := tx.Exec(ctx, insertVariant, id, v.Name, nullIfEmpty(v.SKU), v.Price, v.IsDefault, v.SortOrder); err != nil {
+			VALUES ($1, $2, $3, $4, $5, $6)
+			RETURNING id, price::text`
+		var variantID, price string
+		if err := tx.QueryRow(ctx, insertVariant, id, v.Name, nullIfEmpty(v.SKU),
+			v.Price, v.IsDefault, v.SortOrder).Scan(&variantID, &price); err != nil {
 			return nil, fmt.Errorf("createProduct: variant: %w", err)
+		}
+
+		const history = `
+			INSERT INTO price_histories (entity_type, entity_id, new_price, changed_by)
+			VALUES ('VARIANT', $1, $2, $3)`
+		if _, err := tx.Exec(ctx, history, variantID, price, userID); err != nil {
+			return nil, fmt.Errorf("createProduct: variant history: %w", err)
 		}
 	}
 
@@ -280,22 +291,61 @@ func nullIfEmpty(s string) *string {
 	return &s
 }
 
-func (r *Repository) CreateVariant(ctx context.Context, productID string, in VariantInput) (*Variant, error) {
+func (r *Repository) CreateVariant(ctx context.Context, userID, productID string, in VariantInput) (*Variant, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("createVariant: begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
 	const q = `
 		INSERT INTO product_variants (product_id, name, sku_suffix, price, is_default, sort_order)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, name, COALESCE(sku_suffix, ''), price::text, is_default, is_active, sort_order`
 
 	v := &Variant{}
-	if err := r.pool.QueryRow(ctx, q, productID, in.Name, nullIfEmpty(in.SKU), in.Price,
+	if err := tx.QueryRow(ctx, q, productID, in.Name, nullIfEmpty(in.SKU), in.Price,
 		in.IsDefault, in.SortOrder).Scan(&v.ID, &v.Name, &v.SKU, &v.Price,
 		&v.IsDefault, &v.IsActive, &v.SortOrder); err != nil {
 		return nil, fmt.Errorf("createVariant: %w", err)
 	}
+
+	const history = `
+		INSERT INTO price_histories (entity_type, entity_id, new_price, changed_by)
+		VALUES ('VARIANT', $1, $2, $3)`
+	if _, err := tx.Exec(ctx, history, v.ID, v.Price, userID); err != nil {
+		return nil, fmt.Errorf("createVariant: history: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("createVariant: commit: %w", err)
+	}
 	return v, nil
 }
 
-func (r *Repository) UpdateVariant(ctx context.Context, businessID, variantID string, in VariantInput, isActive bool) (*Variant, error) {
+func (r *Repository) UpdateVariant(ctx context.Context, businessID, userID, variantID string, in VariantInput, isActive bool) (*Variant, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("updateVariant: begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	const current = `
+		SELECT v.price::text
+		FROM product_variants v
+		JOIN products p ON p.id = v.product_id
+		WHERE v.id = $1 AND p.business_id = $2
+		FOR UPDATE OF v`
+
+	var oldPrice string
+	err = tx.QueryRow(ctx, current, variantID, businessID).Scan(&oldPrice)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("updateVariant: current: %w", err)
+	}
+
 	const q = `
 		UPDATE product_variants v
 		SET name = $3, sku_suffix = $4, price = $5, is_default = $6, is_active = $7,
@@ -306,16 +356,59 @@ func (r *Repository) UpdateVariant(ctx context.Context, businessID, variantID st
 		          v.is_default, v.is_active, v.sort_order`
 
 	v := &Variant{}
-	err := r.pool.QueryRow(ctx, q, variantID, businessID, in.Name, nullIfEmpty(in.SKU),
+	err = tx.QueryRow(ctx, q, variantID, businessID, in.Name, nullIfEmpty(in.SKU),
 		in.Price, in.IsDefault, isActive, in.SortOrder).Scan(&v.ID, &v.Name, &v.SKU,
 		&v.Price, &v.IsDefault, &v.IsActive, &v.SortOrder)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
-	}
 	if err != nil {
 		return nil, fmt.Errorf("updateVariant: %w", err)
 	}
+
+	if v.Price != oldPrice {
+		const history = `
+			INSERT INTO price_histories (entity_type, entity_id, old_price, new_price, changed_by)
+			VALUES ('VARIANT', $1, $2, $3, $4)`
+		if _, err := tx.Exec(ctx, history, variantID, oldPrice, v.Price, userID); err != nil {
+			return nil, fmt.Errorf("updateVariant: history: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("updateVariant: commit: %w", err)
+	}
 	return v, nil
+}
+
+type PriceHistory struct {
+	OldPrice  *string   `json:"old_price"`
+	NewPrice  string    `json:"new_price"`
+	Reason    *string   `json:"reason,omitempty"`
+	ChangedAt time.Time `json:"changed_at"`
+}
+
+func (r *Repository) PriceHistories(ctx context.Context, businessID, variantID string) ([]PriceHistory, error) {
+	const q = `
+		SELECT ph.old_price::text, ph.new_price::text, ph.reason, ph.changed_at
+		FROM price_histories ph
+		JOIN product_variants v ON v.id = ph.entity_id
+		JOIN products p ON p.id = v.product_id
+		WHERE ph.entity_type = 'VARIANT' AND ph.entity_id = $1 AND p.business_id = $2
+		ORDER BY ph.changed_at DESC`
+
+	rows, err := r.pool.Query(ctx, q, variantID, businessID)
+	if err != nil {
+		return nil, fmt.Errorf("priceHistories: %w", err)
+	}
+	defer rows.Close()
+
+	items := []PriceHistory{}
+	for rows.Next() {
+		var h PriceHistory
+		if err := rows.Scan(&h.OldPrice, &h.NewPrice, &h.Reason, &h.ChangedAt); err != nil {
+			return nil, fmt.Errorf("scan price history: %w", err)
+		}
+		items = append(items, h)
+	}
+	return items, rows.Err()
 }
 
 func (r *Repository) SetProductAvailability(ctx context.Context, businessID, id string, available bool) error {
