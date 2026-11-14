@@ -285,6 +285,10 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("POST /api/v1/expense-categories", authed(perm("expense_categories.manage")(http.HandlerFunc(expenseHandler.CreateCategory))))
 	mux.Handle("PATCH /api/v1/expense-categories/{id}", authed(perm("expense_categories.manage")(http.HandlerFunc(expenseHandler.UpdateCategory))))
 
+	auditHandler := audit.NewHandler(auditWriter)
+	mux.Handle("GET /api/v1/audit-logs", authed(perm("audit.view")(http.HandlerFunc(auditHandler.List))))
+	mux.Handle("GET /api/v1/audit-logs/export", authed(perm("audit.export")(http.HandlerFunc(auditHandler.Export))))
+
 	tableHandler := table.NewHandler(table.NewService(table.NewRepository(pool)))
 	mux.Handle("GET /api/v1/tables", authed(perm("tables.view")(http.HandlerFunc(tableHandler.List))))
 	mux.Handle("GET /api/v1/tables/{id}", authed(perm("tables.view")(http.HandlerFunc(tableHandler.Get))))

@@ -187,7 +187,7 @@ func (s *Service) close(ctx context.Context, actor auth.Actor, id string, in Clo
 		return nil, err
 	}
 	if err := s.audit.Insert(ctx, tx, audit.Entry{
-		Actor:      actor.Audit(),
+		Actor:      auditActor(actor),
 		Action:     "shift.close",
 		EntityType: "shift",
 		EntityID:   id,
@@ -365,4 +365,17 @@ func (s *Service) CashMovements(ctx context.Context, actor auth.Actor, shiftID s
 		return nil, notFound()
 	}
 	return s.repo.CashMovements(ctx, actor.OutletID, shiftID)
+}
+
+// auditActor menyalin identitas aktor ke konteks penulis audit.
+func auditActor(a auth.Actor) audit.Actor {
+	return audit.Actor{
+		BusinessID: a.BusinessID,
+		OutletID:   a.OutletID,
+		UserID:     a.UserID,
+		Roles:      a.Roles,
+		IPAddress:  a.IPAddress,
+		UserAgent:  a.UserAgent,
+		RequestID:  a.RequestID,
+	}
 }

@@ -319,7 +319,7 @@ func (s *Service) void(ctx context.Context, actor auth.Actor, paymentID string, 
 	}
 
 	if err := s.audit.Insert(ctx, tx, audit.Entry{
-		Actor:      actor.Audit(),
+		Actor:      auditActor(actor),
 		Action:     "payment.void",
 		EntityType: "payment",
 		EntityID:   paymentID,
@@ -577,7 +577,7 @@ func (s *Service) createRefund(ctx context.Context, actor auth.Actor, orderID, k
 	// ponytail: restock bahan dari refund belum menggerakkan stok; tambahkan bila kebijakan restock ditetapkan.
 
 	if err := s.audit.Insert(ctx, tx, audit.Entry{
-		Actor:      actor.Audit(),
+		Actor:      auditActor(actor),
 		Action:     "payment.refund",
 		EntityType: "refund",
 		EntityID:   refundID,
@@ -673,7 +673,7 @@ func (s *Service) ApproveRefund(ctx context.Context, actor auth.Actor, refundID 
 		return nil, err
 	}
 	if err := s.audit.Insert(ctx, tx, audit.Entry{
-		Actor:      actor.Audit(),
+		Actor:      auditActor(actor),
 		Action:     "payment.refund_approve",
 		EntityType: "refund",
 		EntityID:   refundID,
@@ -720,7 +720,7 @@ func (s *Service) RejectRefund(ctx context.Context, actor auth.Actor, refundID s
 		return nil, err
 	}
 	if err := s.audit.Insert(ctx, tx, audit.Entry{
-		Actor:      actor.Audit(),
+		Actor:      auditActor(actor),
 		Action:     "payment.refund_reject",
 		EntityType: "refund",
 		EntityID:   refundID,
@@ -821,4 +821,17 @@ func refundNotFound() error {
 func outletMissing() error {
 	return httpx.NewError(http.StatusUnprocessableEntity, "OUTLET_NOT_CONFIGURED",
 		"Outlet belum dikonfigurasi.")
+}
+
+// auditActor menyalin identitas aktor ke konteks penulis audit.
+func auditActor(a auth.Actor) audit.Actor {
+	return audit.Actor{
+		BusinessID: a.BusinessID,
+		OutletID:   a.OutletID,
+		UserID:     a.UserID,
+		Roles:      a.Roles,
+		IPAddress:  a.IPAddress,
+		UserAgent:  a.UserAgent,
+		RequestID:  a.RequestID,
+	}
 }
