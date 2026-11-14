@@ -179,12 +179,30 @@ func (s *Service) Cancel(ctx context.Context, actor auth.Actor, orderID string, 
 	if err != nil {
 		return nil, err
 	}
+
+	mode := strings.ToUpper(strings.TrimSpace(in.Mode))
 	if started {
-		return nil, httpx.NewError(http.StatusUnprocessableEntity, "ORDER_ALREADY_PREPARING",
-			"Pesanan sudah mulai dimasak; pembatalan butuh persetujuan manager.")
+		if !hasPermission(actor, "orders.cancel_after_prepare") {
+			return nil, httpx.NewError(http.StatusForbidden, "FORBIDDEN",
+				"Pembatalan setelah dimasak butuh izin manager.")
+		}
+		if strings.TrimSpace(in.ReasonCode) == "" {
+			return nil, httpx.NewError(http.StatusUnprocessableEntity, "CANCEL_REASON_REQUIRED",
+				"Alasan pembatalan wajib diisi.")
+		}
+		if mode == "" {
+			mode = "WASTE"
+		}
+	} else if mode == "" {
+		mode = "SALE_REVERSAL"
+	}
+	if mode != "WASTE" && mode != "SALE_REVERSAL" {
+		return nil, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR",
+			"mode harus WASTE atau SALE_REVERSAL.")
 	}
 
-	if err := s.repo.ReverseConsumption(ctx, tx, actor.OutletID, o.ID, actor.UserID); err != nil {
+	reason := reasonText(in.ReasonCode, in.Note)
+	if err := s.repo.ReleaseConsumption(ctx, tx, actor.OutletID, o.ID, actor.UserID, nil, mode == "WASTE", reason); err != nil {
 		return nil, err
 	}
 	if err := s.repo.VoidKitchen(ctx, tx, o.ID); err != nil {
@@ -205,6 +223,100 @@ func (s *Service) Cancel(ctx context.Context, actor auth.Actor, orderID string, 
 		return nil, err
 	}
 	return s.repo.Order(ctx, actor.OutletID, o.ID)
+}
+
+// VoidItem membatalkan satu item pesanan: melepas konsumsi bahannya, menandai
+// item VOID, dan mem-void tiket dapurnya. Item yang sudah dimasak butuh izin
+// orders.cancel_after_prepare, alasan, dan default mode WASTE.
+func (s *Service) VoidItem(ctx context.Context, actor auth.Actor, orderID, itemID string, in VoidInput) (*Order, error) {
+	if actor.OutletID == "" {
+		return nil, outletMissing()
+	}
+	o, err := s.repo.Order(ctx, actor.OutletID, orderID)
+	if errors.Is(err, ErrNotFound) {
+		return nil, notFound()
+	}
+	if err != nil {
+		return nil, err
+	}
+	if o.Status == "CANCELLED" || o.Status == "COMPLETED" {
+		return nil, httpx.NewError(http.StatusConflict, "ORDER_NOT_VOIDABLE",
+			"Pesanan sudah selesai atau dibatalkan.")
+	}
+	if o.Status == "DRAFT" {
+		return nil, httpx.NewError(http.StatusConflict, "ORDER_NOT_CONFIRMED",
+			"Item pada draft dihapus, bukan di-void.")
+	}
+	found := false
+	for _, item := range o.Items {
+		if item.ID == itemID && item.Status == "ACTIVE" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, itemNotFound()
+	}
+
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	kitchenStatus, err := s.repo.KitchenItemStatus(ctx, tx, o.ID, itemID)
+	if err != nil {
+		return nil, err
+	}
+	prepared := kitchenStatus == "COOKING" || kitchenStatus == "READY" || kitchenStatus == "SERVED"
+
+	mode := strings.ToUpper(strings.TrimSpace(in.Mode))
+	if prepared {
+		if !hasPermission(actor, "orders.cancel_after_prepare") {
+			return nil, httpx.NewError(http.StatusForbidden, "FORBIDDEN",
+				"Void item yang sudah dimasak butuh izin manager.")
+		}
+		if strings.TrimSpace(in.ReasonCode) == "" {
+			return nil, httpx.NewError(http.StatusUnprocessableEntity, "VOID_REASON_REQUIRED",
+				"Alasan void wajib diisi.")
+		}
+		if mode == "" {
+			mode = "WASTE"
+		}
+	} else if mode == "" {
+		mode = "SALE_REVERSAL"
+	}
+	if mode != "WASTE" && mode != "SALE_REVERSAL" {
+		return nil, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR",
+			"mode harus WASTE atau SALE_REVERSAL.")
+	}
+
+	reason := reasonText(in.ReasonCode, in.Note)
+	if err := s.repo.ReleaseConsumption(ctx, tx, actor.OutletID, o.ID, actor.UserID, &itemID, mode == "WASTE", reason); err != nil {
+		return nil, err
+	}
+	ok, err := s.repo.SetItemVoid(ctx, tx, o.ID, itemID, actor.UserID, reason)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, itemNotFound()
+	}
+	eventData, err := json.Marshal(map[string]string{"reason_code": in.ReasonCode, "mode": mode})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.InsertItemEvent(ctx, tx, itemID, "VOIDED", actor.UserID, eventData); err != nil {
+		return nil, err
+	}
+	if err := s.repo.VoidKitchenItem(ctx, tx, o.ID, itemID); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	// ponytail: recalc setelah commit; pindahkan ke dalam tx bila butuh satu transaksi.
+	return s.recalc(ctx, actor, o.ID)
 }
 
 // confirm mengunci draft menjadi pesanan resmi: status, nomor order/antrean, dan
@@ -498,6 +610,28 @@ func validServiceType(v string) bool {
 
 func blank(s *string) bool {
 	return s == nil || strings.TrimSpace(*s) == ""
+}
+
+// hasPermission memeriksa izin halus di service; middleware hanya memeriksa izin route.
+func hasPermission(actor auth.Actor, code string) bool {
+	for _, p := range actor.Permissions {
+		if p == code {
+			return true
+		}
+	}
+	return false
+}
+
+// reasonText memilih catatan bila ada, jika tidak pakai kode alasan.
+func reasonText(code string, note *string) *string {
+	if note != nil && strings.TrimSpace(*note) != "" {
+		return note
+	}
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return nil
+	}
+	return &code
 }
 
 func isUniqueViolation(err error) bool {

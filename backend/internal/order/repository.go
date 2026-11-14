@@ -533,18 +533,22 @@ func (r *Repository) KitchenStarted(ctx context.Context, tx pgx.Tx, orderID stri
 	return started, nil
 }
 
-// ReverseConsumption mengembalikan stok bahan pesanan lewat movement SALE_REVERSAL.
-func (r *Repository) ReverseConsumption(ctx context.Context, tx pgx.Tx, outletID, orderID, userID string) error {
+// ReleaseConsumption melepas konsumsi bahan jadi stok lewat movement
+// SALE_REVERSAL. itemID nil berarti seluruh pesanan. mode WASTE menambah
+// movement WASTE setelah pengembalian sehingga saldo bersih nol tetapi susut
+// tetap tercatat (butuh reason).
+func (r *Repository) ReleaseConsumption(ctx context.Context, tx pgx.Tx, outletID, orderID, userID string, itemID *string, waste bool, reason *string) error {
 	const q = `
 		SELECT oic.id, oic.ingredient_id::text,
 		       (oic.quantity_base - oic.reversed_quantity_base)::text, oic.unit_cost::text
 		FROM order_item_consumptions oic
 		JOIN order_items oi ON oi.id = oic.order_item_id
-		WHERE oi.order_id = $1 AND oic.quantity_base > oic.reversed_quantity_base`
+		WHERE oi.order_id = $1 AND oic.quantity_base > oic.reversed_quantity_base
+		  AND ($2::uuid IS NULL OR oi.id = $2)`
 
-	rows, err := tx.Query(ctx, q, orderID)
+	rows, err := tx.Query(ctx, q, orderID, itemID)
 	if err != nil {
-		return fmt.Errorf("reverseConsumption: query: %w", err)
+		return fmt.Errorf("releaseConsumption: query: %w", err)
 	}
 	type row struct {
 		id       string
@@ -559,7 +563,7 @@ func (r *Repository) ReverseConsumption(ctx context.Context, tx pgx.Tx, outletID
 		var qtyStr, costStr string
 		if err := rows.Scan(&rr.id, &rr.ingID, &qtyStr, &costStr); err != nil {
 			rows.Close()
-			return fmt.Errorf("reverseConsumption: scan: %w", err)
+			return fmt.Errorf("releaseConsumption: scan: %w", err)
 		}
 		if rr.qty, err = money.Parse(qtyStr); err != nil {
 			rows.Close()
@@ -592,7 +596,7 @@ func (r *Repository) ReverseConsumption(ctx context.Context, tx pgx.Tx, outletID
 		const lock = `SELECT quantity_on_hand::text, avg_unit_cost::text
 		              FROM inventory WHERE outlet_id = $1 AND ingredient_id = $2 FOR UPDATE`
 		if err := tx.QueryRow(ctx, lock, outletID, ingID).Scan(&onHandStr, &avgStr); err != nil {
-			return fmt.Errorf("reverseConsumption: lock: %w", err)
+			return fmt.Errorf("releaseConsumption: lock: %w", err)
 		}
 		onHand, err := money.Parse(onHandStr)
 		if err != nil {
@@ -613,22 +617,97 @@ func (r *Repository) ReverseConsumption(ctx context.Context, tx pgx.Tx, outletID
 		if _, err := tx.Exec(ctx, movement, outletID, ingID, back.StringFixed(4),
 			avg.StringFixed(6), money.Format(totalCost), balance.StringFixed(4),
 			orderID, userID); err != nil {
-			return fmt.Errorf("reverseConsumption: movement: %w", err)
+			return fmt.Errorf("releaseConsumption: movement: %w", err)
 		}
+
+		if waste {
+			// Barang kembali ke stok lalu langsung dicatat susut: saldo bersih tetap.
+			balance = balance.Sub(back)
+			const wasteQ = `
+				INSERT INTO stock_movements (outlet_id, ingredient_id, movement_type, quantity_delta,
+				                             unit_cost, total_cost, balance_after, avg_cost_after,
+				                             reference_type, reference_id, reason, created_by)
+				VALUES ($1, $2, 'WASTE', $3, $4, $5, $6, $4, 'ORDER', $7, $8, $9)`
+			if _, err := tx.Exec(ctx, wasteQ, outletID, ingID, back.Neg().StringFixed(4),
+				avg.StringFixed(6), money.Format(totalCost), balance.StringFixed(4),
+				orderID, reason, userID); err != nil {
+				return fmt.Errorf("releaseConsumption: waste: %w", err)
+			}
+		}
+
 		const update = `
 			UPDATE inventory SET quantity_on_hand = $3, last_movement_at = now(),
 			       version = version + 1, updated_at = now()
 			WHERE outlet_id = $1 AND ingredient_id = $2`
 		if _, err := tx.Exec(ctx, update, outletID, ingID, balance.StringFixed(4)); err != nil {
-			return fmt.Errorf("reverseConsumption: update: %w", err)
+			return fmt.Errorf("releaseConsumption: update: %w", err)
 		}
 	}
 
 	for _, rr := range pending {
 		const mark = `UPDATE order_item_consumptions SET reversed_quantity_base = quantity_base WHERE id = $1`
 		if _, err := tx.Exec(ctx, mark, rr.id); err != nil {
-			return fmt.Errorf("reverseConsumption: mark: %w", err)
+			return fmt.Errorf("releaseConsumption: mark: %w", err)
 		}
+	}
+	return nil
+}
+
+// KitchenItemStatus mengembalikan status tiket dapur satu item; kosong bila item
+// belum pernah dikirim ke dapur.
+func (r *Repository) KitchenItemStatus(ctx context.Context, tx pgx.Tx, orderID, itemID string) (string, error) {
+	const q = `
+		SELECT koi.status
+		FROM kitchen_order_items koi
+		JOIN kitchen_orders ko ON ko.id = koi.kitchen_order_id
+		WHERE ko.order_id = $1 AND koi.order_item_id = $2`
+	var status string
+	err := tx.QueryRow(ctx, q, orderID, itemID).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("kitchenItemStatus: %w", err)
+	}
+	return status, nil
+}
+
+// SetItemVoid menandai item pesanan VOID bila masih ACTIVE.
+func (r *Repository) SetItemVoid(ctx context.Context, tx pgx.Tx, orderID, itemID, userID string, reason *string) (bool, error) {
+	const q = `
+		UPDATE order_items
+		SET status = 'VOID', void_reason = $4, voided_by = $3, voided_at = now(), updated_at = now()
+		WHERE id = $2 AND order_id = $1 AND status = 'ACTIVE'
+		RETURNING id`
+	var id string
+	err := tx.QueryRow(ctx, q, orderID, itemID, userID, reason).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("setItemVoid: %w", err)
+	}
+	return true, nil
+}
+
+// InsertItemEvent mencatat event per item (append-only).
+func (r *Repository) InsertItemEvent(ctx context.Context, tx pgx.Tx, itemID, eventType, userID string, data []byte) error {
+	const q = `INSERT INTO order_item_events (order_item_id, event_type, data, created_by)
+	           VALUES ($1, $2, $3, $4)`
+	if _, err := tx.Exec(ctx, q, itemID, eventType, data, userID); err != nil {
+		return fmt.Errorf("insertItemEvent: %w", err)
+	}
+	return nil
+}
+
+// VoidKitchenItem menandai tiket dapur satu item sebagai VOID.
+func (r *Repository) VoidKitchenItem(ctx context.Context, tx pgx.Tx, orderID, itemID string) error {
+	const q = `
+		UPDATE kitchen_order_items koi SET status = 'VOID'
+		FROM kitchen_orders ko
+		WHERE ko.id = koi.kitchen_order_id AND ko.order_id = $1 AND koi.order_item_id = $2`
+	if _, err := tx.Exec(ctx, q, orderID, itemID); err != nil {
+		return fmt.Errorf("voidKitchenItem: %w", err)
 	}
 	return nil
 }

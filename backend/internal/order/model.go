@@ -100,6 +100,15 @@ type UpdateItemInput struct {
 type CancelInput struct {
 	ReasonCode string  `json:"reason_code"`
 	Note       *string `json:"note"`
+	// Mode hanya dipakai bila pesanan sudah mulai dimasak: WASTE (default) atau SALE_REVERSAL.
+	Mode string `json:"mode"`
+}
+
+type VoidInput struct {
+	ReasonCode string  `json:"reason_code"`
+	Note       *string `json:"note"`
+	// Mode: SALE_REVERSAL (default pra-masak) atau WASTE (default pasca-masak).
+	Mode string `json:"mode"`
 }
 
 type Filter struct {
