@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/httpx"
 )
 
 // statusRecorder merekam status code untuk access log.
@@ -31,7 +33,7 @@ func AccessLog(logger *slog.Logger) func(http.Handler) http.Handler {
 				"path", r.URL.Path,
 				"status", rec.status,
 				"duration_ms", time.Since(start).Milliseconds(),
-				"request_id", RequestIDFrom(r.Context()),
+				"request_id", httpx.RequestIDFrom(r.Context()),
 				"ip", r.RemoteAddr,
 			)
 		})
@@ -47,7 +49,7 @@ func Recover(logger *slog.Logger) func(http.Handler) http.Handler {
 					logger.Error("panic recovered",
 						"error", rec,
 						"path", r.URL.Path,
-						"request_id", RequestIDFrom(r.Context()),
+						"request_id", httpx.RequestIDFrom(r.Context()),
 					)
 					http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Terjadi kesalahan internal."}}`, http.StatusInternalServerError)
 				}

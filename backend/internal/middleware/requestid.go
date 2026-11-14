@@ -1,15 +1,12 @@
 package middleware
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/httpx"
 )
-
-type contextKey string
-
-const requestIDKey contextKey = "request_id"
 
 // RequestID menerima X-Request-ID dari klien atau membuat baru, lalu
 // menyimpannya di context dan mengembalikannya di response.
@@ -21,15 +18,9 @@ func RequestID(next http.Handler) http.Handler {
 		}
 
 		w.Header().Set("X-Request-ID", id)
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestIDKey, id)))
+		ctx := httpx.WithRequestID(r.Context(), id)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
-}
-
-// RequestIDFrom mengambil request id dari context. Kosong bila middleware
-// RequestID tidak dipasang.
-func RequestIDFrom(ctx context.Context) string {
-	id, _ := ctx.Value(requestIDKey).(string)
-	return id
 }
 
 func newID() string {

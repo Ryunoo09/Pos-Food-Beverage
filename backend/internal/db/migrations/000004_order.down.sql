@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS order_discounts;
+DROP TABLE IF EXISTS discounts;
+DROP TABLE IF EXISTS order_item_events;
+DROP TABLE IF EXISTS order_status_histories;
+DROP TABLE IF EXISTS order_item_consumptions;
+DROP TABLE IF EXISTS order_item_modifiers;
+DROP TABLE IF EXISTS order_items;
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS tables;
