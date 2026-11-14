@@ -78,15 +78,15 @@ func (r *Repository) CreateDraft(ctx context.Context, outletID, userID string, i
 
 	const q = `
 		INSERT INTO orders (outlet_id, service_type, payment_timing, table_id, customer_name,
-		                    note, priority, created_by, service_charge_rate, tax_rate,
-		                    tax_inclusive, pricing_snapshot)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		                    customer_phone, delivery_address, note, priority, created_by,
+		                    service_charge_rate, tax_rate, tax_inclusive, pricing_snapshot)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING id`
 
 	var id string
 	if err := r.pool.QueryRow(ctx, q, outletID, in.ServiceType, p.PaymentTiming, in.TableID,
-		in.CustomerName, in.Note, in.Priority, userID, p.ServiceRate, p.TaxRate,
-		p.TaxInclusive, snapshot).Scan(&id); err != nil {
+		in.CustomerName, in.CustomerPhone, in.DeliveryAddress, in.Note, in.Priority, userID,
+		p.ServiceRate, p.TaxRate, p.TaxInclusive, snapshot).Scan(&id); err != nil {
 		return nil, fmt.Errorf("createDraft: %w", err)
 	}
 	return r.Order(ctx, outletID, id)
@@ -95,8 +95,8 @@ func (r *Repository) CreateDraft(ctx context.Context, outletID, userID string, i
 func (r *Repository) Order(ctx context.Context, outletID, id string) (*Order, error) {
 	const q = `
 		SELECT id, order_no, queue_no, service_type, status, payment_status, payment_timing,
-		       table_id, customer_name, note, priority, subtotal_amount::text,
-		       item_discount_amount::text, order_discount_amount::text,
+		       table_id, customer_name, customer_phone, delivery_address, note, priority,
+		       subtotal_amount::text, item_discount_amount::text, order_discount_amount::text,
 		       service_charge_rate::text, service_charge_amount::text, tax_rate::text,
 		       tax_amount::text, tax_inclusive, rounding_amount::text, total_amount::text,
 		       paid_amount::text, total_cogs::text, created_at, confirmed_at, pricing_snapshot
@@ -106,7 +106,8 @@ func (r *Repository) Order(ctx context.Context, outletID, id string) (*Order, er
 	var snapshot []byte
 	err := r.pool.QueryRow(ctx, q, id, outletID).Scan(&o.ID, &o.OrderNo, &o.QueueNo,
 		&o.ServiceType, &o.Status, &o.PaymentStatus, &o.PaymentTiming, &o.TableID,
-		&o.CustomerName, &o.Note, &o.Priority, &o.SubtotalAmount, &o.ItemDiscount,
+		&o.CustomerName, &o.CustomerPhone, &o.DelivAddress, &o.Note, &o.Priority,
+		&o.SubtotalAmount, &o.ItemDiscount,
 		&o.OrderDiscount, &o.ServiceRate, &o.ServiceAmount, &o.TaxRate, &o.TaxAmount,
 		&o.TaxInclusive, &o.RoundingAmount, &o.TotalAmount, &o.PaidAmount, &o.TotalCogs,
 		&o.CreatedAt, &o.ConfirmedAt, &snapshot)
@@ -398,6 +399,36 @@ func (r *Repository) NextSequence(ctx context.Context, q querier, outletID, docT
 		return 0, fmt.Errorf("nextSequence: %w", err)
 	}
 	return n, nil
+}
+
+// Begin membuka transaksi supaya penomoran dan perubahan status atomik.
+func (r *Repository) Begin(ctx context.Context) (pgx.Tx, error) {
+	return r.pool.Begin(ctx)
+}
+
+// SetConfirmed mengunci draft menjadi CONFIRMED dengan nomor resmi dan snapshot harga.
+func (r *Repository) SetConfirmed(ctx context.Context, tx pgx.Tx, orderID, userID, no string, queueNo *int, snapshot []byte) error {
+	const sql = `
+		UPDATE orders
+		SET status = 'CONFIRMED', order_no = $2, queue_no = $3, confirmed_by = $4,
+		    confirmed_at = now(), pricing_snapshot = $5, version = version + 1, updated_at = now()
+		WHERE id = $1 AND status = 'DRAFT'`
+
+	if _, err := tx.Exec(ctx, sql, orderID, no, queueNo, userID, snapshot); err != nil {
+		return fmt.Errorf("setConfirmed: %w", err)
+	}
+	return nil
+}
+
+// InsertStatusHistory mencatat perpindahan status (append-only).
+func (r *Repository) InsertStatusHistory(ctx context.Context, tx pgx.Tx, orderID, from, to, userID string) error {
+	const sql = `
+		INSERT INTO order_status_histories (order_id, from_status, to_status, changed_by)
+		VALUES ($1, $2, $3, $4)`
+	if _, err := tx.Exec(ctx, sql, orderID, from, to, userID); err != nil {
+		return fmt.Errorf("insertStatusHistory: %w", err)
+	}
+	return nil
 }
 
 func (r *Repository) List(ctx context.Context, outletID string, f Filter) ([]Order, int, error) {

@@ -3,9 +3,13 @@ package order
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/auth"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/httpx"
@@ -84,9 +88,96 @@ func (s *Service) CreateDraft(ctx context.Context, actor auth.Actor, in DraftInp
 
 	o, err := s.repo.CreateDraft(ctx, actor.OutletID, actor.UserID, in, pricing)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return nil, httpx.NewError(http.StatusConflict, "TABLE_OCCUPIED",
+				"Meja sudah dipakai pesanan aktif lain.")
+		}
 		return nil, err
 	}
 	return o, nil
+}
+
+// Confirm mengunci draft menjadi pesanan resmi: status, nomor order/antrean, dan
+// snapshot harga final disimpan atomik.
+func (s *Service) Confirm(ctx context.Context, actor auth.Actor, orderID string) (*Order, error) {
+	o, err := s.draft(ctx, actor, orderID)
+	if err != nil {
+		return nil, err
+	}
+
+	active := 0
+	for _, item := range o.Items {
+		if item.Status == "ACTIVE" {
+			active++
+		}
+	}
+	if active == 0 {
+		return nil, httpx.NewError(http.StatusUnprocessableEntity, "ORDER_EMPTY",
+			"Pesanan belum memiliki item.")
+	}
+
+	switch o.ServiceType {
+	case "DINE_IN":
+		if o.TableID == nil {
+			return nil, httpx.NewError(http.StatusUnprocessableEntity, "TABLE_REQUIRED",
+				"Pesanan dine-in wajib memilih meja.")
+		}
+	case "DELIVERY":
+		if blank(o.CustomerPhone) || blank(o.DelivAddress) {
+			return nil, httpx.NewError(http.StatusUnprocessableEntity, "DELIVERY_INFO_REQUIRED",
+				"Pesanan delivery wajib nomor telepon dan alamat.")
+		}
+	}
+
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	// ponytail: periode dari waktu server; business_day_cutoff belum diterapkan.
+	period := time.Now().Format("060102")
+	n, err := s.repo.NextSequence(ctx, tx, actor.OutletID, "ORDER", period)
+	if err != nil {
+		return nil, err
+	}
+
+	var queueNo *int
+	if o.ServiceType == "TAKEAWAY" || o.ServiceType == "PICKUP" {
+		q, err := s.repo.NextSequence(ctx, tx, actor.OutletID, "QUEUE", period)
+		if err != nil {
+			return nil, err
+		}
+		queueNo = &q
+	}
+
+	snapshot, err := json.Marshal(confirmSnapshot{
+		pricingSnapshot: o.pricing,
+		TaxRate:         o.TaxRate,
+		ServiceRate:     o.ServiceRate,
+		TaxInclusive:    o.TaxInclusive,
+		Subtotal:        o.SubtotalAmount,
+		ItemDiscount:    o.ItemDiscount,
+		OrderDiscount:   o.OrderDiscount,
+		Service:         o.ServiceAmount,
+		Tax:             o.TaxAmount,
+		Rounding:        o.RoundingAmount,
+		Total:           o.TotalAmount,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.repo.SetConfirmed(ctx, tx, o.ID, actor.UserID, orderNo(period, n), queueNo, snapshot); err != nil {
+		return nil, err
+	}
+	if err := s.repo.InsertStatusHistory(ctx, tx, o.ID, "DRAFT", "CONFIRMED", actor.UserID); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return s.repo.Order(ctx, actor.OutletID, o.ID)
 }
 
 func (s *Service) AddItem(ctx context.Context, actor auth.Actor, orderID string, in ItemInput) (*Order, error) {
@@ -274,6 +365,30 @@ func validServiceType(v string) bool {
 		return true
 	}
 	return false
+}
+
+func blank(s *string) bool {
+	return s == nil || strings.TrimSpace(*s) == ""
+}
+
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+// confirmSnapshot menyimpan setelan harga final saat pesanan dikonfirmasi.
+type confirmSnapshot struct {
+	pricingSnapshot
+	TaxRate       string `json:"tax_rate"`
+	ServiceRate   string `json:"service_rate"`
+	TaxInclusive  bool   `json:"tax_inclusive"`
+	Subtotal      string `json:"subtotal"`
+	ItemDiscount  string `json:"item_discount"`
+	OrderDiscount string `json:"order_discount"`
+	Service       string `json:"service"`
+	Tax           string `json:"tax"`
+	Rounding      string `json:"rounding"`
+	Total         string `json:"total"`
 }
 
 func validStatus(v string) bool {

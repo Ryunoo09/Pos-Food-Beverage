@@ -12,6 +12,8 @@ type Order struct {
 	PaymentTiming  string      `json:"payment_timing"`
 	TableID        *string     `json:"table_id,omitempty"`
 	CustomerName   *string     `json:"customer_name,omitempty"`
+	CustomerPhone  *string     `json:"customer_phone,omitempty"`
+	DelivAddress   *string     `json:"delivery_address,omitempty"`
 	Note           *string     `json:"note,omitempty"`
 	Priority       string      `json:"priority"`
 	SubtotalAmount string      `json:"subtotal_amount"`
@@ -70,11 +72,13 @@ type ItemModifier struct {
 }
 
 type DraftInput struct {
-	ServiceType  string  `json:"service_type"`
-	TableID      *string `json:"table_id"`
-	CustomerName *string `json:"customer_name"`
-	Note         *string `json:"note"`
-	Priority     string  `json:"priority"`
+	ServiceType     string  `json:"service_type"`
+	TableID         *string `json:"table_id"`
+	CustomerName    *string `json:"customer_name"`
+	CustomerPhone   *string `json:"customer_phone"`
+	DeliveryAddress *string `json:"delivery_address"`
+	Note            *string `json:"note"`
+	Priority        string  `json:"priority"`
 }
 
 type ItemInput struct {
