@@ -135,6 +135,22 @@ func (s *Service) Confirm(ctx context.Context, actor auth.Actor, orderID string)
 	}
 	defer tx.Rollback(ctx)
 
+	// Kurangi stok bahan dan hitung HPP dalam transaksi yang sama (BR-TX-1).
+	lines, unknown, err := s.repo.StockLines(ctx, tx, o.ID)
+	if err != nil {
+		return nil, err
+	}
+	allowNegative, err := s.repo.AllowNegativeStock(ctx, tx, actor.OutletID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.ApplyStock(ctx, tx, actor.OutletID, o.ID, actor.UserID, lines, allowNegative); err != nil {
+		return nil, err
+	}
+	if err := s.repo.MarkCostUnknown(ctx, tx, unknown); err != nil {
+		return nil, err
+	}
+
 	// ponytail: periode dari waktu server; business_day_cutoff belum diterapkan.
 	period := time.Now().Format("060102")
 	n, err := s.repo.NextSequence(ctx, tx, actor.OutletID, "ORDER", period)

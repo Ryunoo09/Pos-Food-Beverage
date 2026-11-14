@@ -57,6 +57,9 @@ type OrderItem struct {
 	ModifiersTotal string         `json:"modifiers_total"`
 	DiscountAmount string         `json:"discount_amount"`
 	LineTotal      string         `json:"line_total"`
+	UnitCogs       string         `json:"unit_cogs"`
+	LineCogs       string         `json:"line_cogs"`
+	CostUnknown    bool           `json:"cost_unknown"`
 	Status         string         `json:"status"`
 	Note           *string        `json:"note,omitempty"`
 	Modifiers      []ItemModifier `json:"modifiers,omitempty"`

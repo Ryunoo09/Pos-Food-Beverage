@@ -133,7 +133,8 @@ func (r *Repository) items(ctx context.Context, orderID string) ([]OrderItem, er
 	const q = `
 		SELECT id, round_no, product_id, variant_id, product_name_snapshot,
 		       variant_name_snapshot, sku_snapshot, quantity, unit_price::text,
-		       modifiers_total::text, discount_amount::text, line_total::text, status, note
+		       modifiers_total::text, discount_amount::text, line_total::text,
+		       unit_cogs::text, line_cogs::text, cost_unknown, status, note
 		FROM order_items
 		WHERE order_id = $1
 		ORDER BY created_at`
@@ -150,7 +151,8 @@ func (r *Repository) items(ctx context.Context, orderID string) ([]OrderItem, er
 		var item OrderItem
 		if err := rows.Scan(&item.ID, &item.RoundNo, &item.ProductID, &item.VariantID,
 			&item.ProductName, &item.VariantName, &item.SKU, &item.Quantity, &item.UnitPrice,
-			&item.ModifiersTotal, &item.DiscountAmount, &item.LineTotal, &item.Status,
+			&item.ModifiersTotal, &item.DiscountAmount, &item.LineTotal,
+			&item.UnitCogs, &item.LineCogs, &item.CostUnknown, &item.Status,
 			&item.Note); err != nil {
 			return nil, fmt.Errorf("scan order item: %w", err)
 		}
@@ -429,6 +431,20 @@ func (r *Repository) InsertStatusHistory(ctx context.Context, tx pgx.Tx, orderID
 		return fmt.Errorf("insertStatusHistory: %w", err)
 	}
 	return nil
+}
+
+// AllowNegativeStock membaca setelan outlet; default true bila baris tidak ada.
+func (r *Repository) AllowNegativeStock(ctx context.Context, q querier, outletID string) (bool, error) {
+	var ok bool
+	err := q.QueryRow(ctx,
+		`SELECT allow_negative_stock FROM outlet_settings WHERE outlet_id = $1`, outletID).Scan(&ok)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("allowNegativeStock: %w", err)
+	}
+	return ok, nil
 }
 
 func (r *Repository) List(ctx context.Context, outletID string, f Filter) ([]Order, int, error) {
