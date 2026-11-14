@@ -31,6 +31,7 @@ type Product struct {
 	IsActive        bool      `json:"is_active"`
 	IsAvailable     bool      `json:"is_available"`
 	SortOrder       int       `json:"sort_order"`
+	Price           string    `json:"price"`
 	Variants        []Variant `json:"variants,omitempty"`
 }
 
