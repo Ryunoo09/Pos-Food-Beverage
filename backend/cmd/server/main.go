@@ -177,6 +177,11 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("GET /api/v1/stock-opnames/{id}", authed(perm("stock_opname.view")(http.HandlerFunc(opnameHandler.Get))))
 	mux.Handle("POST /api/v1/stock-opnames/{id}/start", authed(perm("stock_opname.create")(http.HandlerFunc(opnameHandler.Start))))
 	mux.Handle("PUT /api/v1/stock-opnames/{id}/items", authed(perm("stock_opname.count")(http.HandlerFunc(opnameHandler.Count))))
+	mux.Handle("POST /api/v1/stock-opnames/{id}/submit", authed(perm("stock_opname.submit")(http.HandlerFunc(opnameHandler.Submit))))
+	mux.Handle("POST /api/v1/stock-opnames/{id}/approve", authed(perm("stock_opname.approve")(http.HandlerFunc(opnameHandler.Approve))))
+	mux.Handle("POST /api/v1/stock-opnames/{id}/reject", authed(perm("stock_opname.approve")(http.HandlerFunc(opnameHandler.Reject))))
+	mux.Handle("POST /api/v1/stock-opnames/{id}/cancel", authed(perm("stock_opname.cancel")(http.HandlerFunc(opnameHandler.Cancel))))
+	mux.Handle("GET /api/v1/stock-opnames/{id}/report", authed(perm("stock_opname.view")(http.HandlerFunc(opnameHandler.Report))))
 
 	supplierHandler := supplier.NewHandler(supplier.NewService(supplier.NewRepository(pool)))
 	mux.Handle("GET /api/v1/suppliers", authed(perm("suppliers.view")(http.HandlerFunc(supplierHandler.List))))

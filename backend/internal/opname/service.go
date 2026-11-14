@@ -201,6 +201,237 @@ func (s *Service) Count(ctx context.Context, actor auth.Actor, id string, in Cou
 	return s.repo.Opname(ctx, actor.OutletID, id)
 }
 
+// Submit mengunci sesi setelah seluruh bahan selesai dihitung.
+func (s *Service) Submit(ctx context.Context, actor auth.Actor, id string) (*Opname, error) {
+	if actor.OutletID == "" {
+		return nil, outletMissing()
+	}
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	status, _, found, err := s.repo.LockOpname(ctx, tx, actor.OutletID, id)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, notFound()
+	}
+	if status != "IN_PROGRESS" {
+		return nil, httpx.NewError(http.StatusConflict, "OPNAME_NOT_SUBMITTABLE",
+			"Sesi opname tidak bisa diajukan pada status saat ini.")
+	}
+
+	total, counted, err := s.repo.CountStats(ctx, tx, id)
+	if err != nil {
+		return nil, err
+	}
+	if counted < total {
+		return nil, httpx.NewError(http.StatusUnprocessableEntity, "OPNAME_INCOMPLETE",
+			"Semua bahan harus dihitung sebelum diajukan.")
+	}
+
+	ok, err := s.repo.SetSubmitted(ctx, tx, actor.OutletID, id, actor.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, httpx.NewError(http.StatusConflict, "OPNAME_NOT_SUBMITTABLE",
+			"Sesi opname tidak bisa diajukan pada status saat ini.")
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return s.repo.Opname(ctx, actor.OutletID, id)
+}
+
+// Approve menetapkan stok ke hasil hitung fisik dan menulis movement ADJUSTMENT.
+func (s *Service) Approve(ctx context.Context, actor auth.Actor, id string) (*Opname, error) {
+	if actor.OutletID == "" {
+		return nil, outletMissing()
+	}
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	status, submittedBy, found, err := s.repo.LockOpname(ctx, tx, actor.OutletID, id)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, notFound()
+	}
+	if status != "SUBMITTED" {
+		return nil, httpx.NewError(http.StatusConflict, "OPNAME_NOT_APPROVABLE",
+			"Sesi opname tidak bisa disetujui pada status saat ini.")
+	}
+
+	allow, err := s.repo.AllowSelfApproval(ctx, actor.OutletID)
+	if err != nil {
+		return nil, err
+	}
+	if !allow && submittedBy != nil && *submittedBy == actor.UserID {
+		return nil, httpx.NewError(http.StatusUnprocessableEntity, "OPNAME_SELF_APPROVAL",
+			"Pengaju tidak boleh menyetujui opname miliknya sendiri.")
+	}
+
+	items, err := s.repo.CountedItems(ctx, tx, id)
+	if err != nil {
+		return nil, err
+	}
+	for _, it := range items {
+		current, avg, err := s.repo.LockInventoryForOpname(ctx, tx, actor.OutletID, it.IngredientID)
+		if err != nil {
+			return nil, err
+		}
+		cur, err := money.Parse(current)
+		if err != nil {
+			return nil, err
+		}
+		counted, err := money.Parse(it.Quantity)
+		if err != nil {
+			return nil, err
+		}
+		cost, err := money.Parse(avg)
+		if err != nil {
+			return nil, err
+		}
+
+		// ponytail: expected = saldo saat approve (bukan snapshot + replay movement);
+		// ganti ke replay bila butuh audit selisih per gerakan.
+		delta := counted.Sub(cur)
+		expected := money.Format(cur)
+		diff := money.Format(delta)
+		value := money.Format(delta.Mul(cost))
+
+		if delta.IsZero() {
+			if err := s.repo.UpdateItemResult(ctx, tx, it.ID, expected, diff, value, nil); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		balance := money.Format(counted)
+		movementID, err := s.repo.InsertOpnameAdjustment(ctx, tx, actor.OutletID, id,
+			it.IngredientID, diff, avg, balance, actor.UserID, it.Reason)
+		if err != nil {
+			if isUniqueViolation(err) {
+				return nil, httpx.NewError(http.StatusConflict, "OPNAME_ALREADY_ADJUSTED",
+					"Bahan pada sesi ini sudah pernah disesuaikan.")
+			}
+			return nil, err
+		}
+		if err := s.repo.UpdateInventoryAfterOpname(ctx, tx, actor.OutletID, it.IngredientID, balance); err != nil {
+			return nil, err
+		}
+		if err := s.repo.UpdateItemResult(ctx, tx, it.ID, expected, diff, value, &movementID); err != nil {
+			return nil, err
+		}
+	}
+
+	ok, err := s.repo.SetApproved(ctx, tx, actor.OutletID, id, actor.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, httpx.NewError(http.StatusConflict, "OPNAME_NOT_APPROVABLE",
+			"Sesi opname tidak bisa disetujui pada status saat ini.")
+	}
+	if err := s.repo.DeactivateItems(ctx, tx, id); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return s.repo.Opname(ctx, actor.OutletID, id)
+}
+
+// Reject menolak sesi tanpa mengubah stok dan melepas itemnya.
+func (s *Service) Reject(ctx context.Context, actor auth.Actor, id string, in RejectInput) (*Opname, error) {
+	if actor.OutletID == "" {
+		return nil, outletMissing()
+	}
+	reason := strings.TrimSpace(in.Reason)
+	if reason == "" {
+		return nil, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR", "reason wajib diisi.")
+	}
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	status, _, found, err := s.repo.LockOpname(ctx, tx, actor.OutletID, id)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, notFound()
+	}
+	if status != "SUBMITTED" {
+		return nil, httpx.NewError(http.StatusConflict, "OPNAME_NOT_REJECTABLE",
+			"Sesi opname tidak bisa ditolak pada status saat ini.")
+	}
+	ok, err := s.repo.SetRejected(ctx, tx, actor.OutletID, id, reason)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, httpx.NewError(http.StatusConflict, "OPNAME_NOT_REJECTABLE",
+			"Sesi opname tidak bisa ditolak pada status saat ini.")
+	}
+	if err := s.repo.DeactivateItems(ctx, tx, id); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return s.repo.Opname(ctx, actor.OutletID, id)
+}
+
+// Cancel membatalkan sesi yang belum final dan melepas itemnya.
+func (s *Service) Cancel(ctx context.Context, actor auth.Actor, id string) (*Opname, error) {
+	if actor.OutletID == "" {
+		return nil, outletMissing()
+	}
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	status, _, found, err := s.repo.LockOpname(ctx, tx, actor.OutletID, id)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, notFound()
+	}
+	if status != "DRAFT" && status != "IN_PROGRESS" && status != "SUBMITTED" {
+		return nil, httpx.NewError(http.StatusConflict, "OPNAME_NOT_CANCELLABLE",
+			"Sesi opname tidak bisa dibatalkan pada status saat ini.")
+	}
+	ok, err := s.repo.SetCancelled(ctx, tx, actor.OutletID, id)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, httpx.NewError(http.StatusConflict, "OPNAME_NOT_CANCELLABLE",
+			"Sesi opname tidak bisa dibatalkan pada status saat ini.")
+	}
+	if err := s.repo.DeactivateItems(ctx, tx, id); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return s.repo.Opname(ctx, actor.OutletID, id)
+}
+
 func opnameCode(period string, n int) string {
 	return fmt.Sprintf("OPN-%s-%04d", period, n)
 }

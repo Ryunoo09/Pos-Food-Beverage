@@ -10,6 +10,7 @@ type Opname struct {
 	Status       string     `json:"status"`
 	Scope        string     `json:"scope"`
 	Note         *string    `json:"note,omitempty"`
+	RejectReason *string    `json:"rejected_reason,omitempty"`
 	StartedAt    *time.Time `json:"started_at,omitempty"`
 	SubmittedAt  *time.Time `json:"submitted_at,omitempty"`
 	ApprovedAt   *time.Time `json:"approved_at,omitempty"`
@@ -28,6 +29,7 @@ type Item struct {
 	SystemQuantity  string     `json:"system_quantity"`
 	CountedQuantity *string    `json:"counted_quantity,omitempty"`
 	Difference      *string    `json:"difference_quantity,omitempty"`
+	DifferenceValue *string    `json:"difference_value,omitempty"`
 	CountedAt       *time.Time `json:"counted_at,omitempty"`
 	Reason          *string    `json:"reason,omitempty"`
 }
@@ -46,4 +48,8 @@ type CountItem struct {
 	IngredientID    string  `json:"ingredient_id"`
 	CountedQuantity string  `json:"counted_quantity"`
 	Reason          *string `json:"reason"`
+}
+
+type RejectInput struct {
+	Reason string `json:"reason"`
 }
