@@ -255,6 +255,7 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	paymentHandler := payment.NewHandler(payment.NewService(payment.NewRepository(pool)))
 	mux.Handle("POST /api/v1/orders/{id}/payments", authed(perm("payments.create")(http.HandlerFunc(paymentHandler.Create))))
 	mux.Handle("GET /api/v1/orders/{id}/payments", authed(perm("payments.view")(http.HandlerFunc(paymentHandler.List))))
+	mux.Handle("POST /api/v1/payments/{id}/void", authed(perm("payments.void")(http.HandlerFunc(paymentHandler.Void))))
 
 	tableHandler := table.NewHandler(table.NewService(table.NewRepository(pool)))
 	mux.Handle("GET /api/v1/tables", authed(perm("tables.view")(http.HandlerFunc(tableHandler.List))))

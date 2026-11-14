@@ -15,6 +15,9 @@ type Payment struct {
 	Status       string     `json:"status"`
 	ReferenceNo  *string    `json:"reference_no,omitempty"`
 	PaidAt       *time.Time `json:"paid_at,omitempty"`
+	VoidedBy     *string    `json:"voided_by,omitempty"`
+	VoidedAt     *time.Time `json:"voided_at,omitempty"`
+	VoidReason   *string    `json:"void_reason,omitempty"`
 	ReceivedBy   string     `json:"received_by"`
 	CreatedAt    time.Time  `json:"created_at"`
 }

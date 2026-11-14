@@ -103,16 +103,76 @@ func (r *Repository) InsertPayment(ctx context.Context, tx pgx.Tx, outletID, ord
 	return id, nil
 }
 
+// paymentRow adalah data minimal pembayaran saat akan di-void.
+type paymentRow struct {
+	ID      string
+	OrderID string
+	ShiftID string
+	Status  string
+}
+
+func (r *Repository) LockPayment(ctx context.Context, tx pgx.Tx, outletID, id string) (*paymentRow, bool, error) {
+	const q = `
+		SELECT order_id, shift_id, status FROM payments
+		WHERE id = $1 AND outlet_id = $2 FOR UPDATE`
+
+	p := &paymentRow{ID: id}
+	err := tx.QueryRow(ctx, q, id, outletID).Scan(&p.OrderID, &p.ShiftID, &p.Status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("lockPayment: %w", err)
+	}
+	return p, true, nil
+}
+
+func (r *Repository) VoidPayment(ctx context.Context, tx pgx.Tx, outletID, id, userID, reason string) error {
+	tag, err := tx.Exec(ctx, `
+		UPDATE payments SET status = 'VOIDED', voided_by = $3, voided_at = now(), void_reason = $4
+		WHERE id = $1 AND outlet_id = $2 AND status = 'SUCCESS'`, id, outletID, userID, reason)
+	if err != nil {
+		return fmt.Errorf("voidPayment: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// SumSuccessfulPayments menghitung ulang total pembayaran yang masih berlaku.
+func (r *Repository) SumSuccessfulPayments(ctx context.Context, tx pgx.Tx, orderID string) (string, error) {
+	var sum string
+	err := tx.QueryRow(ctx, `
+		SELECT COALESCE(sum(amount), 0)::text FROM payments
+		WHERE order_id = $1 AND status = 'SUCCESS'`, orderID).Scan(&sum)
+	if err != nil {
+		return "", fmt.Errorf("sumSuccessfulPayments: %w", err)
+	}
+	return sum, nil
+}
+
+func (r *Repository) SetOrderPaid(ctx context.Context, tx pgx.Tx, outletID, orderID, paid, paymentStatus string) error {
+	if _, err := tx.Exec(ctx, `
+		UPDATE orders SET paid_amount = $3, payment_status = $4,
+		       version = version + 1, updated_at = now()
+		WHERE id = $1 AND outlet_id = $2`, orderID, outletID, paid, paymentStatus); err != nil {
+		return fmt.Errorf("setOrderPaid: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) Payment(ctx context.Context, outletID, id string) (*Payment, error) {
 	const q = `
 		SELECT id, order_id, shift_id, method_code, amount::text, cash_received::text,
-		       change_amount::text, status, reference_no, paid_at, received_by, created_at
+		       change_amount::text, status, reference_no, paid_at, voided_by::text, voided_at,
+		       void_reason, received_by, created_at
 		FROM payments WHERE id = $1 AND outlet_id = $2`
 
 	p := &Payment{}
 	err := r.pool.QueryRow(ctx, q, id, outletID).Scan(&p.ID, &p.OrderID, &p.ShiftID, &p.MethodCode,
 		&p.Amount, &p.CashReceived, &p.ChangeAmount, &p.Status, &p.ReferenceNo, &p.PaidAt,
-		&p.ReceivedBy, &p.CreatedAt)
+		&p.VoidedBy, &p.VoidedAt, &p.VoidReason, &p.ReceivedBy, &p.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -125,7 +185,8 @@ func (r *Repository) Payment(ctx context.Context, outletID, id string) (*Payment
 func (r *Repository) Payments(ctx context.Context, outletID, orderID string) ([]Payment, error) {
 	const q = `
 		SELECT id, order_id, shift_id, method_code, amount::text, cash_received::text,
-		       change_amount::text, status, reference_no, paid_at, received_by, created_at
+		       change_amount::text, status, reference_no, paid_at, voided_by::text, voided_at,
+		       void_reason, received_by, created_at
 		FROM payments WHERE outlet_id = $1 AND order_id = $2
 		ORDER BY created_at`
 
@@ -139,7 +200,8 @@ func (r *Repository) Payments(ctx context.Context, outletID, orderID string) ([]
 	for rows.Next() {
 		var p Payment
 		if err := rows.Scan(&p.ID, &p.OrderID, &p.ShiftID, &p.MethodCode, &p.Amount, &p.CashReceived,
-			&p.ChangeAmount, &p.Status, &p.ReferenceNo, &p.PaidAt, &p.ReceivedBy, &p.CreatedAt); err != nil {
+			&p.ChangeAmount, &p.Status, &p.ReferenceNo, &p.PaidAt, &p.VoidedBy, &p.VoidedAt,
+			&p.VoidReason, &p.ReceivedBy, &p.CreatedAt); err != nil {
 			return nil, fmt.Errorf("payments: scan: %w", err)
 		}
 		items = append(items, p)

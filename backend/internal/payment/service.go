@@ -189,6 +189,148 @@ func (s *Service) create(ctx context.Context, actor auth.Actor, orderID, key str
 	return &CreateResult{Payment: *payment, Order: stateOf(updated)}, nil
 }
 
+// Void membatalkan pembayaran salah input selama shift masih terbuka.
+func (s *Service) Void(ctx context.Context, actor auth.Actor, paymentID, key string, in VoidInput) (*CreateResult, error) {
+	if actor.OutletID == "" {
+		return nil, outletMissing()
+	}
+	if strings.TrimSpace(key) == "" {
+		return nil, httpx.NewError(http.StatusBadRequest, "IDEMPOTENCY_KEY_REQUIRED",
+			"Header Idempotency-Key wajib diisi.")
+	}
+	scope := actor.OutletID + ":" + actor.UserID + ":POST /payments/:id/void"
+	hash := sha256.Sum256([]byte(paymentID + "|" + in.Reason))
+
+	claimed, err := s.repo.ClaimIdempotency(ctx, scope, key, hash[:])
+	if err != nil {
+		return nil, err
+	}
+	if !claimed {
+		stored, status, body, found, err := s.repo.IdempotencyEntry(ctx, scope, key)
+		if err != nil {
+			return nil, err
+		}
+		if !found || !bytes.Equal(stored, hash[:]) {
+			return nil, httpx.NewError(http.StatusConflict, "IDEMPOTENCY_CONFLICT",
+				"Kunci idempotensi sudah dipakai untuk permintaan berbeda.")
+		}
+		if status == 0 {
+			return nil, httpx.NewError(http.StatusConflict, "IDEMPOTENCY_IN_PROGRESS",
+				"Permintaan dengan kunci ini sedang diproses.")
+		}
+		var result CreateResult
+		if err := json.Unmarshal(body, &result); err != nil {
+			return nil, err
+		}
+		return &result, nil
+	}
+
+	result, err := s.void(ctx, actor, paymentID, in)
+	if err != nil {
+		_ = s.repo.ReleaseIdempotency(ctx, scope, key)
+		return nil, err
+	}
+	body, err := json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.SaveIdempotencyResponse(ctx, scope, key, http.StatusCreated, body); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s *Service) void(ctx context.Context, actor auth.Actor, paymentID string, in VoidInput) (*CreateResult, error) {
+	reason := strings.TrimSpace(in.Reason)
+	if reason == "" {
+		return nil, validation("reason wajib diisi.")
+	}
+
+	// Void hanya boleh pada shift yang masih terbuka (FR-F14-4).
+	shiftID, ok, err := s.repo.OpenShift(ctx, actor.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, httpx.NewError(http.StatusUnprocessableEntity, "SHIFT_NOT_OPEN",
+			"Kasir belum membuka shift.")
+	}
+
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	pay, found, err := s.repo.LockPayment(ctx, tx, actor.OutletID, paymentID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, httpx.NewError(http.StatusNotFound, "PAYMENT_NOT_FOUND", "Pembayaran tidak ditemukan.")
+	}
+	if pay.Status != "SUCCESS" {
+		return nil, httpx.NewError(http.StatusUnprocessableEntity, "PAYMENT_NOT_VOIDABLE",
+			"Hanya pembayaran berhasil yang dapat di-void.")
+	}
+	if pay.ShiftID != shiftID {
+		return nil, httpx.NewError(http.StatusUnprocessableEntity, "SHIFT_MISMATCH",
+			"Void hanya dapat dilakukan pada shift pembayaran tersebut.")
+	}
+
+	order, found, err := s.repo.LockOrder(ctx, tx, actor.OutletID, pay.OrderID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, notFound()
+	}
+
+	if err := s.repo.VoidPayment(ctx, tx, actor.OutletID, paymentID, actor.UserID, reason); err != nil {
+		return nil, err
+	}
+
+	// payment_status selalu diturunkan dari payments SUCCESS (BR-F14-1).
+	// ponytail: refund belum dikurangkan; tambahkan saat commit refund.
+	paidText, err := s.repo.SumSuccessfulPayments(ctx, tx, pay.OrderID)
+	if err != nil {
+		return nil, err
+	}
+	total, err := money.Parse(order.Total)
+	if err != nil {
+		return nil, err
+	}
+	paid, err := money.Parse(paidText)
+	if err != nil {
+		return nil, err
+	}
+	status := "UNPAID"
+	if paid.IsPositive() {
+		status = "PARTIALLY_PAID"
+		if paid.GreaterThanOrEqual(total) {
+			status = "PAID"
+		}
+	}
+	if err := s.repo.SetOrderPaid(ctx, tx, actor.OutletID, pay.OrderID, money.Format(paid), status); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	payment, err := s.repo.Payment(ctx, actor.OutletID, paymentID)
+	if err != nil {
+		return nil, err
+	}
+	// ponytail: status pesanan (mis. COMPLETED) tidak dikembalikan; sesuaikan bila void pasca-selesai perlu dibuka lagi.
+	updated, _, err := s.repo.Order(ctx, actor.OutletID, pay.OrderID)
+	if err != nil {
+		return nil, err
+	}
+	return &CreateResult{Payment: *payment, Order: stateOf(updated)}, nil
+}
+
 func (s *Service) List(ctx context.Context, actor auth.Actor, orderID string) ([]Payment, error) {
 	if actor.OutletID == "" {
 		return nil, outletMissing()
