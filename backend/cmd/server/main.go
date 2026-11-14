@@ -16,6 +16,7 @@ import (
 
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/auth"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/config"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/dashboard"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/db"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/middleware"
 )
@@ -111,6 +112,9 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("DELETE /api/v1/users/{id}/roles/{roleId}", authed(perm("roles.manage")(http.HandlerFunc(h.RemoveUserRole))))
 
 	mux.Handle("GET /api/v1/roles", authed(perm("roles.view")(http.HandlerFunc(h.ListRoles))))
+
+	dashboardHandler := dashboard.NewHandler(dashboard.NewService(dashboard.NewRepository(pool)))
+	mux.Handle("GET /api/v1/dashboard", authed(perm("dashboard.view")(http.HandlerFunc(dashboardHandler.Summary))))
 
 	return handlerChain(mux, logger)
 }
