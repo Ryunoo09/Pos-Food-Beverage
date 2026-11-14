@@ -2,7 +2,9 @@
 package order
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -97,9 +99,62 @@ func (s *Service) CreateDraft(ctx context.Context, actor auth.Actor, in DraftInp
 	return o, nil
 }
 
-// Confirm mengunci draft menjadi pesanan resmi: status, nomor order/antrean, dan
+// Confirm menjalankan konfirmasi dengan proteksi idempotensi: permintaan ulang
+// dengan kunci sama mengembalikan hasil yang sama.
+func (s *Service) Confirm(ctx context.Context, actor auth.Actor, orderID, key string) (*Order, error) {
+	if strings.TrimSpace(key) == "" {
+		return nil, httpx.NewError(http.StatusBadRequest, "IDEMPOTENCY_KEY_REQUIRED",
+			"Header Idempotency-Key wajib diisi.")
+	}
+	scope := actor.OutletID + ":" + actor.UserID + ":POST /orders/:id/confirm"
+	hash := sha256.Sum256([]byte(orderID))
+
+	claimed, err := s.repo.ClaimIdempotency(ctx, scope, key, hash[:])
+	if err != nil {
+		return nil, err
+	}
+	if !claimed {
+		stored, status, body, found, err := s.repo.IdempotencyEntry(ctx, scope, key)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			return nil, httpx.NewError(http.StatusConflict, "IDEMPOTENCY_CONFLICT",
+				"Kunci idempotensi bertabrakan.")
+		}
+		if !bytes.Equal(stored, hash[:]) {
+			return nil, httpx.NewError(http.StatusConflict, "IDEMPOTENCY_CONFLICT",
+				"Kunci idempotensi sudah dipakai untuk permintaan berbeda.")
+		}
+		if status == 0 {
+			return nil, httpx.NewError(http.StatusConflict, "IDEMPOTENCY_IN_PROGRESS",
+				"Permintaan dengan kunci ini sedang diproses.")
+		}
+		var o Order
+		if err := json.Unmarshal(body, &o); err != nil {
+			return nil, err
+		}
+		return &o, nil
+	}
+
+	o, err := s.confirm(ctx, actor, orderID)
+	if err != nil {
+		_ = s.repo.ReleaseIdempotency(ctx, scope, key)
+		return nil, err
+	}
+	body, err := json.Marshal(o)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.SaveIdempotencyResponse(ctx, scope, key, http.StatusOK, body); err != nil {
+		return nil, err
+	}
+	return o, nil
+}
+
+// confirm mengunci draft menjadi pesanan resmi: status, nomor order/antrean, dan
 // snapshot harga final disimpan atomik.
-func (s *Service) Confirm(ctx context.Context, actor auth.Actor, orderID string) (*Order, error) {
+func (s *Service) confirm(ctx context.Context, actor auth.Actor, orderID string) (*Order, error) {
 	o, err := s.draft(ctx, actor, orderID)
 	if err != nil {
 		return nil, err

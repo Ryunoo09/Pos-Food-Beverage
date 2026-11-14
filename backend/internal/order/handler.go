@@ -123,7 +123,7 @@ func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
 	actor, _ := auth.ActorFrom(r.Context())
 	requestID := httpx.RequestIDFrom(r.Context())
 
-	o, err := h.svc.Confirm(r.Context(), actor, r.PathValue("id"))
+	o, err := h.svc.Confirm(r.Context(), actor, r.PathValue("id"), r.Header.Get("Idempotency-Key"))
 	if err != nil {
 		httpx.WriteError(w, err, requestID)
 		return

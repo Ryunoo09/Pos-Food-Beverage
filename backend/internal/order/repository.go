@@ -465,6 +465,56 @@ func (r *Repository) CreateKitchenOrder(ctx context.Context, tx pgx.Tx, outletID
 	return nil
 }
 
+// ClaimIdempotency menyisipkan kunci baru; false berarti kunci sudah ada.
+func (r *Repository) ClaimIdempotency(ctx context.Context, scope, key string, hash []byte) (bool, error) {
+	tag, err := r.pool.Exec(ctx, `
+		INSERT INTO idempotency_keys (scope, key, request_hash, expires_at)
+		VALUES ($1, $2, $3, now() + interval '24 hours')
+		ON CONFLICT (scope, key) DO NOTHING`, scope, key, hash)
+	if err != nil {
+		return false, fmt.Errorf("claimIdempotency: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// IdempotencyEntry mengambil hasil tersimpan; status 0 berarti masih diproses.
+func (r *Repository) IdempotencyEntry(ctx context.Context, scope, key string) ([]byte, int, []byte, bool, error) {
+	var hash, body []byte
+	var status *int
+	err := r.pool.QueryRow(ctx, `
+		SELECT request_hash, response_status, response_body
+		FROM idempotency_keys WHERE scope = $1 AND key = $2`, scope, key).Scan(&hash, &status, &body)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, 0, nil, false, nil
+	}
+	if err != nil {
+		return nil, 0, nil, false, fmt.Errorf("idempotencyEntry: %w", err)
+	}
+	if status == nil {
+		return hash, 0, nil, true, nil
+	}
+	return hash, *status, body, true, nil
+}
+
+// SaveIdempotencyResponse menyimpan hasil akhir agar permintaan ulang mengembalikan yang sama.
+func (r *Repository) SaveIdempotencyResponse(ctx context.Context, scope, key string, status int, body []byte) error {
+	const q = `UPDATE idempotency_keys SET response_status = $3, response_body = $4
+	           WHERE scope = $1 AND key = $2`
+	if _, err := r.pool.Exec(ctx, q, scope, key, status, body); err != nil {
+		return fmt.Errorf("saveIdempotencyResponse: %w", err)
+	}
+	return nil
+}
+
+// ReleaseIdempotency menghapus klaim supaya percobaan berikutnya bisa memproses ulang.
+func (r *Repository) ReleaseIdempotency(ctx context.Context, scope, key string) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM idempotency_keys WHERE scope = $1 AND key = $2`, scope, key)
+	if err != nil {
+		return fmt.Errorf("releaseIdempotency: %w", err)
+	}
+	return nil
+}
+
 // AllowNegativeStock membaca setelan outlet; default true bila baris tidak ada.
 func (r *Repository) AllowNegativeStock(ctx context.Context, q querier, outletID string) (bool, error) {
 	var ok bool
