@@ -21,6 +21,7 @@ import (
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/inventory"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/menu"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/middleware"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/supplier"
 )
 
 func main() {
@@ -159,6 +160,15 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("POST /api/v1/ingredients/{id}/deactivate", authed(perm("ingredients.update")(inventoryHandler.SetIngredientActive(false))))
 	mux.Handle("POST /api/v1/ingredients/{id}/activate", authed(perm("ingredients.update")(inventoryHandler.SetIngredientActive(true))))
 	mux.Handle("GET /api/v1/ingredients/{id}/movements", authed(perm("inventory.view")(http.HandlerFunc(inventoryHandler.Movements))))
+
+	supplierHandler := supplier.NewHandler(supplier.NewService(supplier.NewRepository(pool)))
+	mux.Handle("GET /api/v1/suppliers", authed(perm("suppliers.view")(http.HandlerFunc(supplierHandler.List))))
+	mux.Handle("GET /api/v1/suppliers/{id}", authed(perm("suppliers.view")(http.HandlerFunc(supplierHandler.Get))))
+	mux.Handle("POST /api/v1/suppliers", authed(perm("suppliers.create")(http.HandlerFunc(supplierHandler.Create))))
+	mux.Handle("PATCH /api/v1/suppliers/{id}", authed(perm("suppliers.update")(http.HandlerFunc(supplierHandler.Update))))
+	mux.Handle("POST /api/v1/suppliers/{id}/deactivate", authed(perm("suppliers.deactivate")(supplierHandler.SetActive(false))))
+	mux.Handle("POST /api/v1/suppliers/{id}/activate", authed(perm("suppliers.update")(supplierHandler.SetActive(true))))
+	mux.Handle("PUT /api/v1/suppliers/{id}/ingredients", authed(perm("suppliers.update")(http.HandlerFunc(supplierHandler.SetIngredients))))
 
 	return handlerChain(mux, logger)
 }
