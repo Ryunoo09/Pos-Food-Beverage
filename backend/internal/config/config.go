@@ -26,11 +26,11 @@ func Load() (Config, error) {
 	if cfg.DatabaseURL == "" {
 		cfg.DatabaseURL = fmt.Sprintf(
 			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			env("DB_USER", "pos_user"),
-			env("DB_PASSWORD", ""),
+			env("DB_USER", "postgres"),
+			env("DB_PASSWORD", "postgres"),
 			env("DB_HOST", "localhost"),
 			env("DB_PORT", "5432"),
-			env("DB_NAME", "pos_fb"),
+			env("DB_NAME", "pos_food_db"),
 		)
 	}
 
