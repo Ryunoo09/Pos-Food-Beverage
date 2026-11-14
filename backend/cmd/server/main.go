@@ -30,6 +30,7 @@ import (
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/purchase"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/recipe"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/settings"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/shift"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/supplier"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/table"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/waste"
@@ -260,6 +261,14 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("GET /api/v1/refunds", authed(perm("payments.view")(http.HandlerFunc(paymentHandler.ListRefunds))))
 	mux.Handle("POST /api/v1/refunds/{id}/approve", authed(perm("payments.approve_refund")(http.HandlerFunc(paymentHandler.ApproveRefund))))
 	mux.Handle("POST /api/v1/refunds/{id}/reject", authed(perm("payments.approve_refund")(http.HandlerFunc(paymentHandler.RejectRefund))))
+
+	shiftHandler := shift.NewHandler(shift.NewService(shift.NewRepository(pool)))
+	mux.Handle("GET /api/v1/shifts", authed(perm("shifts.view_all")(http.HandlerFunc(shiftHandler.List))))
+	mux.Handle("GET /api/v1/shifts/current", authed(perm("shifts.open")(http.HandlerFunc(shiftHandler.Current))))
+	mux.Handle("POST /api/v1/shifts/open", authed(perm("shifts.open")(http.HandlerFunc(shiftHandler.Open))))
+	mux.Handle("GET /api/v1/shifts/{id}/summary", authed(perm("shifts.view")(http.HandlerFunc(shiftHandler.Summary))))
+	mux.Handle("GET /api/v1/shifts/{id}/report", authed(perm("shifts.view")(http.HandlerFunc(shiftHandler.Summary))))
+	mux.Handle("POST /api/v1/shifts/{id}/close", authed(perm("shifts.close")(http.HandlerFunc(shiftHandler.Close))))
 
 	tableHandler := table.NewHandler(table.NewService(table.NewRepository(pool)))
 	mux.Handle("GET /api/v1/tables", authed(perm("tables.view")(http.HandlerFunc(tableHandler.List))))
