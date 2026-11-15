@@ -9,7 +9,6 @@ export interface LoginBody {
 
 export const authApi = {
   login: (body: LoginBody) => api.post<ApiResponse<AuthPayload>>('/auth/login', body),
-  refresh: () => api.post<ApiResponse<AuthPayload>>('/auth/refresh'),
   logout: () => api.post<void>('/auth/logout'),
   logoutAll: () => api.post<void>('/auth/logout-all'),
   me: () => api.get<ApiResponse<{ user: AuthUser; permissions: string[] }>>('/auth/me'),

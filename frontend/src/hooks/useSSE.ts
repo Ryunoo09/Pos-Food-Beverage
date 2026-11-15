@@ -10,8 +10,13 @@ const MAX_DELAY = 15_000
 
 /**
  * EventSource dengan backoff 1, 2, 4, 8, 15 detik dan Last-Event-ID saat
- * reconnect. Token tidak dikirim header (EventSource tidak mendukung);
- * autentikasi memakai cookie sesi yang dikirim backend.
+ * reconnect.
+ *
+ * ponytail: kontrak auth stream belum ada (backend SSE menyusul di fase
+ * realtime). EventSource tidak bisa mengirim header Authorization dan cookie
+ * refresh dibatasi Path=/api/v1/auth, jadi endpoint stream wajib menerima
+ * tiket/token lewat query atau cookie khusus. Hanya event `message` yang
+ * ditangani; tambahkan addEventListener saat backend memakai event bernama.
  */
 export function useSSE(url: string | null, onEvent: (event: SSEEvent) => void) {
   const handlerRef = useRef(onEvent)

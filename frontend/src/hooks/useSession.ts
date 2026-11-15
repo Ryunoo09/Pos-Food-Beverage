@@ -14,7 +14,14 @@ export function useSession() {
   useEffect(() => {
     if (status !== 'idle') return
     setStatus('loading')
-    void refreshSession()
+    void refreshSession().then((token) => {
+      // Gangguan jaringan tidak mengubah status di doRefresh(); lepaskan spinner
+      // agar pengguna melihat halaman login, bukan loading tanpa akhir.
+      if (!token) {
+        const store = useAuthStore.getState()
+        if (store.status === 'loading') store.setStatus('anonymous')
+      }
+    })
   }, [status, setStatus])
 
   return status

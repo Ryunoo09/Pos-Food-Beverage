@@ -25,6 +25,7 @@ export function NumberInput({
   placeholder = '0',
 }: NumberInputProps) {
   const id = useId()
+  const describedBy = error ? `${id}-error` : helper ? `${id}-helper` : undefined
 
   return (
     <div className="w-full">
@@ -45,6 +46,7 @@ export function NumberInput({
           disabled={disabled}
           placeholder={placeholder}
           aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy}
           onChange={(event) => onValueChange(event.target.value.replace(/\D/g, '').slice(0, 14))}
           className={cn(
             'h-11 w-full rounded-lg border bg-white pr-3 pl-11 text-right text-slate-900 tabular-nums outline-none focus:ring-2 dark:bg-slate-900 dark:text-slate-100',
@@ -55,9 +57,13 @@ export function NumberInput({
         />
       </div>
       {error ? (
-        <p className="mt-1 text-sm text-red-600">{error}</p>
+        <p id={`${id}-error`} className="mt-1 text-sm text-red-600">
+          {error}
+        </p>
       ) : helper ? (
-        <p className="mt-1 text-sm text-slate-500">{helper}</p>
+        <p id={`${id}-helper`} className="mt-1 text-sm text-slate-500">
+          {helper}
+        </p>
       ) : null}
     </div>
   )

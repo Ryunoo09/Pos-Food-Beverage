@@ -27,12 +27,18 @@ export const router = createBrowserRouter([
       {
         path: '/pos',
         element: <POSLayout />,
-        children: [{ index: true, element: page('POS', 'orders.create') }],
+        children: [
+          { index: true, element: page('POS', 'orders.create') },
+          { path: '*', element: <NotFoundPage /> },
+        ],
       },
       {
         path: '/kitchen',
         element: <KDSLayout />,
-        children: [{ index: true, element: page('Dapur (KDS)', 'kitchen.orders.view') }],
+        children: [
+          { index: true, element: page('Dapur (KDS)', 'kitchen.orders.view') },
+          { path: '*', element: <NotFoundPage /> },
+        ],
       },
       {
         element: <AppLayout />,

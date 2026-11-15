@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { cn } from '../../utils/cn'
 import { ToastContext } from './toast-context'
@@ -20,12 +20,17 @@ let nextId = 0
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([])
+  const timers = useRef<number[]>([])
 
   const push = useCallback((message: string, tone: ToastTone = 'success') => {
     const id = ++nextId
     setItems((prev) => [...prev, { id, message, tone }])
-    setTimeout(() => setItems((prev) => prev.filter((item) => item.id !== id)), 4000)
+    timers.current.push(
+      window.setTimeout(() => setItems((prev) => prev.filter((item) => item.id !== id)), 4000),
+    )
   }, [])
+
+  useEffect(() => () => timers.current.forEach((timer) => window.clearTimeout(timer)), [])
 
   const api = useMemo(() => ({ push }), [push])
 

@@ -25,7 +25,9 @@ export function ConfirmDialog({
   return (
     <Dialog
       open={open}
-      onOpenChange={(next) => !next && onCancel()}
+      onOpenChange={(next) => {
+        if (!next && !loading) onCancel()
+      }}
       title={title}
       description={description}
       footer={
