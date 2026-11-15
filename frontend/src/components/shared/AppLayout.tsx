@@ -1,0 +1,17 @@
+import { Outlet } from 'react-router-dom'
+import { Sidebar } from './Sidebar'
+import { TopBar } from './TopBar'
+
+export function AppLayout() {
+  return (
+    <div className="min-h-dvh">
+      <Sidebar />
+      <div className="lg:pl-64">
+        <TopBar />
+        <main className="p-4 lg:p-6">
+          <Outlet />
+        </main>
+      </div>
+    </div>
+  )
+}
