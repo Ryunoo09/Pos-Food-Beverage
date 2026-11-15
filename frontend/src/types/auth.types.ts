@@ -3,7 +3,7 @@ export interface AuthUser {
   id: string
   username: string
   full_name: string
-  email?: string
+  email?: string | null
   is_active: boolean
   must_change_password: boolean
   roles: string[]

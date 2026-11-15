@@ -13,7 +13,7 @@ import type { ApiError } from '../../types/api.types'
 const schema = z
   .object({
     current_password: z.string().min(1, 'Password saat ini wajib diisi.'),
-    new_password: z.string().min(8, 'Password baru minimal 8 karakter.'),
+    new_password: z.string().min(10, 'Password baru minimal 10 karakter.'),
     confirm_password: z.string().min(1, 'Konfirmasi password wajib diisi.'),
   })
   .refine((values) => values.new_password === values.confirm_password, {
@@ -50,7 +50,8 @@ export function ChangePasswordPage() {
       navigate('/login', { replace: true })
     } catch (error) {
       const apiError = error as ApiError
-      setError('current_password', { message: apiError.message })
+      const field = apiError.code === 'VALIDATION_ERROR' ? 'new_password' : 'current_password'
+      setError(field, { message: apiError.message })
     }
   }
 
@@ -74,7 +75,7 @@ export function ChangePasswordPage() {
               label="Password baru"
               type="password"
               autoComplete="new-password"
-              helper="Minimal 8 karakter."
+              helper="Minimal 10 karakter, tidak sama dengan username."
               error={errors.new_password?.message}
               {...register('new_password')}
             />

@@ -48,7 +48,7 @@ api.interceptors.response.use(
       axios.isAxiosError(error) &&
       error.response?.status === 401 &&
       config !== undefined &&
-      config.headers?.[RETRY_HEADER] === undefined &&
+      config.headers?.get?.(RETRY_HEADER) === undefined &&
       !AUTH_EXEMPT.some((path) => config.url?.includes(path))
 
     if (isExpired) {
