@@ -1,20 +1,79 @@
-import { createBrowserRouter, Link, Navigate } from 'react-router-dom'
+import { Navigate, createBrowserRouter } from 'react-router-dom'
+import { AppLayout } from './components/shared/AppLayout'
+import { KDSLayout, POSLayout } from './components/shared/Layouts'
+import { PermissionGate } from './components/shared/PermissionGate'
+import { RequireAuth } from './components/shared/RequireAuth'
+import { ChangePasswordPage } from './features/auth/ChangePasswordPage'
 import { LoginPage } from './features/auth/LoginPage'
 import { DashboardPage } from './features/dashboard/DashboardPage'
+import { ForbiddenPage, NotFoundPage } from './features/errors/ErrorPages'
+import { PlaceholderPage } from './features/shared/PlaceholderPage'
+
+function page(title: string, permission: string, description?: string) {
+  return (
+    <PermissionGate perm={permission} redirect="/403">
+      <PlaceholderPage title={title} permission={permission} description={description} />
+    </PermissionGate>
+  )
+}
 
 export const router = createBrowserRouter([
-  { path: '/', element: <Navigate to="/login" replace /> },
   { path: '/login', element: <LoginPage /> },
-  { path: '/dashboard', element: <DashboardPage /> },
   {
-    path: '*',
-    element: (
-      <main className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-slate-100 p-4">
-        <h1 className="text-2xl font-semibold text-slate-900">Halaman tidak ditemukan</h1>
-        <Link className="text-orange-600 underline" to="/dashboard">
-          Kembali ke Dashboard
-        </Link>
-      </main>
-    ),
+    element: <RequireAuth />,
+    children: [
+      { path: '/change-password', element: <ChangePasswordPage /> },
+      { path: '/', element: <Navigate to="/dashboard" replace /> },
+      {
+        path: '/pos',
+        element: <POSLayout />,
+        children: [{ index: true, element: page('POS', 'orders.create') }],
+      },
+      {
+        path: '/kitchen',
+        element: <KDSLayout />,
+        children: [{ index: true, element: page('Dapur (KDS)', 'kitchen.orders.view') }],
+      },
+      {
+        element: <AppLayout />,
+        children: [
+          { path: '/dashboard', element: <DashboardPage /> },
+          { path: '/orders', element: page('Pesanan', 'orders.view') },
+          { path: '/orders/:id', element: page('Detail Pesanan', 'orders.view') },
+          { path: '/tables', element: page('Meja', 'tables.view') },
+          { path: '/menu', element: page('Menu', 'products.view') },
+          { path: '/menu/categories', element: page('Kategori Menu', 'products.view') },
+          { path: '/menu/:id', element: page('Detail Produk', 'products.view') },
+          { path: '/ingredients', element: page('Bahan', 'ingredients.view') },
+          { path: '/ingredients/:id', element: page('Detail Bahan', 'ingredients.view') },
+          { path: '/recipes/:variantId', element: page('Resep', 'recipes.view') },
+          { path: '/inventory', element: page('Stok', 'inventory.view') },
+          { path: '/inventory/opname', element: page('Stock Opname', 'stock_opname.view') },
+          { path: '/inventory/opname/:id', element: page('Detail Opname', 'stock_opname.view') },
+          { path: '/purchase', element: page('Pembelian', 'purchases.view') },
+          { path: '/purchase/:id', element: page('Detail Pembelian', 'purchases.view') },
+          { path: '/suppliers', element: page('Supplier', 'suppliers.view') },
+          { path: '/waste', element: page('Waste', 'waste.view') },
+          { path: '/shifts', element: page('Shift', 'shifts.view') },
+          { path: '/shifts/:id', element: page('Detail Shift', 'shifts.view') },
+          { path: '/expenses', element: page('Pengeluaran', 'expenses.view') },
+          { path: '/reports', element: page('Laporan', 'reports.sales.view') },
+          { path: '/reports/sales', element: page('Laporan Penjualan', 'reports.sales.view') },
+          { path: '/reports/financial', element: page('Laporan Keuangan', 'reports.profit.view') },
+          { path: '/reports/inventory', element: page('Laporan Inventori', 'reports.inventory.view') },
+          {
+            path: '/reports/menu-performance',
+            element: page('Performa Menu', 'reports.menu_performance.view'),
+          },
+          { path: '/settings', element: page('Pengaturan', 'settings.view') },
+          { path: '/settings/users', element: page('Pengguna', 'users.view') },
+          { path: '/settings/roles', element: page('Role', 'roles.view') },
+          { path: '/settings/tax', element: page('Pajak', 'tax.manage') },
+          { path: '/settings/payment-methods', element: page('Metode Pembayaran', 'settings.view') },
+          { path: '/403', element: <ForbiddenPage /> },
+          { path: '*', element: <NotFoundPage /> },
+        ],
+      },
+    ],
   },
 ])
