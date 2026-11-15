@@ -1,4 +1,4 @@
-.PHONY: build run test lint fmt tidy migrate-up migrate-down migrate-create backup backup-encrypted
+.PHONY: build run seed test lint fmt tidy migrate-up migrate-down migrate-create backup backup-encrypted
 
 BIN := bin/server
 MIGRATION_DIR := internal/db/migrations
@@ -8,6 +8,10 @@ build:
 
 run:
 	go run ./cmd/server
+
+# Data dev: bisnis, outlet, 4 role default, dan akun dummy untuk login.
+seed:
+	go run ./cmd/seed
 
 test:
 	go test -race -count=1 ./...
