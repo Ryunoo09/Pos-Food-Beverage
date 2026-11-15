@@ -3,32 +3,23 @@ import { cn } from '../../utils/cn'
 
 export function Card({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <section
-      className={cn(
-        'rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900',
-        className,
-      )}
-    >
-      {children}
-    </section>
+    <section className={cn('rounded-card border border-line bg-surface', className)}>{children}</section>
   )
 }
 
 export function CardHeader({ title, action }: { title: ReactNode; action?: ReactNode }) {
   return (
-    <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
-      <h2 className="font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
+    <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-rule px-5 py-3">
+      <h2 className="text-base font-semibold">{title}</h2>
       {action}
     </header>
   )
 }
 
 export function CardBody({ className, children }: { className?: string; children: ReactNode }) {
-  return <div className={cn('p-4', className)}>{children}</div>
+  return <div className={cn('p-5', className)}>{children}</div>
 }
 
 export function CardFooter({ children }: { children: ReactNode }) {
-  return (
-    <footer className="border-t border-slate-200 px-4 py-3 dark:border-slate-800">{children}</footer>
-  )
+  return <footer className="border-t border-rule px-5 py-3">{children}</footer>
 }

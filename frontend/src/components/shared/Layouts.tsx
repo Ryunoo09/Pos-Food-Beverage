@@ -1,22 +1,28 @@
-import { Link, Outlet } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
+import { Link, Outlet } from 'react-router-dom'
+import { ProductMark } from './ProductMark'
 
 /** Layar kasir: penuh, tanpa sidebar, tombol besar. */
 export function POSLayout() {
   return (
-    <div className="flex min-h-dvh flex-col bg-slate-100 dark:bg-slate-950">
-      <header className="flex h-16 items-center gap-4 border-b border-slate-200 bg-white px-4 dark:border-slate-800 dark:bg-slate-900">
+    <div className="flex min-h-dvh flex-col bg-ground">
+      <header className="flex h-14 items-center gap-3 px-4">
         <Link
           to="/dashboard"
-          className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+          className="flex min-h-11 items-center gap-2 rounded-control px-2 text-sm text-muted hover:bg-raised hover:text-ink"
         >
-          <ArrowLeft className="size-4" />
+          <ArrowLeft className="size-4" strokeWidth={1.5} />
           Keluar POS
         </Link>
-        <span className="text-lg font-semibold text-brand-600">Kasir</span>
+        <span className="ml-auto flex items-center gap-2">
+          <ProductMark className="size-5 text-brand-600" />
+          <span className="text-sm font-semibold">Kasir</span>
+        </span>
       </header>
-      <main className="flex-1">
-        <Outlet />
+      <main className="flex flex-1 pr-2 pb-2">
+        <div className="flex-1 rounded-sheet border border-line bg-surface p-5">
+          <Outlet />
+        </div>
       </main>
     </div>
   )
@@ -25,18 +31,23 @@ export function POSLayout() {
 /** Layar dapur: kontras tinggi, dibaca dari jarak 1-2 meter. */
 export function KDSLayout() {
   return (
-    <div className="min-h-dvh bg-slate-950 text-slate-50">
-      <header className="flex h-16 items-center justify-between border-b border-slate-800 px-6">
-        <span className="text-xl font-bold tracking-wide">DAPUR</span>
+    <div className="dark min-h-dvh bg-ground text-ink">
+      <header className="flex h-16 items-center justify-between px-6">
+        <span className="flex items-center gap-3 text-xl font-semibold tracking-wide">
+          <ProductMark className="size-6 text-brand-500" />
+          Dapur
+        </span>
         <Link
           to="/dashboard"
-          className="flex min-h-11 items-center rounded-lg px-4 text-base font-semibold text-slate-300 hover:bg-slate-800"
+          className="flex min-h-11 items-center rounded-control px-4 text-base font-medium text-muted hover:bg-raised hover:text-ink"
         >
           Keluar
         </Link>
       </header>
-      <main className="p-6">
-        <Outlet />
+      <main className="px-4 pb-4">
+        <div className="min-h-[calc(100dvh-5rem)] rounded-sheet border border-line bg-surface p-6">
+          <Outlet />
+        </div>
       </main>
     </div>
   )

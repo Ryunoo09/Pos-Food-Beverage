@@ -12,17 +12,17 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const VARIANTS: Record<Variant, string> = {
-  primary: 'bg-brand-600 text-white hover:bg-brand-700 focus-visible:outline-brand-600',
-  secondary:
-    'border border-slate-300 bg-white text-slate-800 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800',
-  danger: 'bg-red-600 text-white hover:bg-red-700 focus-visible:outline-red-600',
-  ghost: 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800',
+  // Satu aksi utama per layar, isi near-black; brand tidak dipakai di chrome.
+  primary: 'bg-ink text-surface hover:opacity-90',
+  secondary: 'border border-control bg-surface text-ink hover:bg-raised',
+  danger: 'bg-negative text-white hover:opacity-90',
+  ghost: 'text-muted hover:bg-raised hover:text-ink',
 }
 
 const SIZES: Record<Size, string> = {
-  sm: 'min-h-11 px-3 text-sm',
-  md: 'h-11 px-4 text-sm',
-  lg: 'h-13 px-6 text-base',
+  sm: 'min-h-9 px-3 text-[13px]',
+  md: 'min-h-11 px-4 text-sm',
+  lg: 'min-h-13 px-6 text-base',
 }
 
 export function Button({
@@ -40,8 +40,7 @@ export function Button({
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-colors',
-        'focus-visible:outline-2 focus-visible:outline-offset-2',
+        'inline-flex items-center justify-center gap-2 rounded-control font-medium transition-colors',
         'disabled:cursor-not-allowed disabled:opacity-50',
         VARIANTS[variant],
         SIZES[size],

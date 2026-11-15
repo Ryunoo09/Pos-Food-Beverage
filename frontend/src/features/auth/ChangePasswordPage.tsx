@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom'
 import { z } from 'zod'
 import { authApi } from '../../api/auth'
 import { Button } from '../../components/ui/Button'
-import { Card, CardBody, CardHeader } from '../../components/ui/Card'
 import { Input } from '../../components/ui/Input'
 import { useToast } from '../../hooks/useToast'
 import { useAuthStore } from '../../store/auth'
@@ -56,14 +55,13 @@ export function ChangePasswordPage() {
   }
 
   return (
-    <main className="grid min-h-dvh place-items-center bg-slate-100 p-4 dark:bg-slate-950">
-      <Card className="w-full max-w-md">
-        <CardHeader title="Ganti password" />
-        <CardBody>
-          <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
-            Password sementara wajib diganti sebelum memakai aplikasi.
-          </p>
-          <form className="space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
+    <main className="grid min-h-dvh place-items-center bg-ground p-4">
+      <div className="w-full max-w-[420px] rounded-sheet border border-line bg-surface p-8">
+        <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.01em]">Ganti password</h1>
+        <p className="mt-1.5 text-sm text-muted">
+          Password sementara wajib diganti sebelum memakai aplikasi.
+        </p>
+        <form className="mt-6 space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
             <Input
               label="Password saat ini"
               type="password"
@@ -90,8 +88,7 @@ export function ChangePasswordPage() {
               Simpan password
             </Button>
           </form>
-        </CardBody>
-      </Card>
+      </div>
     </main>
   )
 }

@@ -1,5 +1,5 @@
-import { Badge } from '../../components/ui/Badge'
-import { Card, CardBody, CardHeader } from '../../components/ui/Card'
+import { PageHeader } from '../../components/shared/PageHeader'
+import { Card } from '../../components/ui/Card'
 
 export interface PlaceholderPageProps {
   title: string
@@ -13,13 +13,19 @@ export interface PlaceholderPageProps {
  */
 export function PlaceholderPage({ title, permission, description }: PlaceholderPageProps) {
   return (
-    <Card>
-      <CardHeader title={title} action={<Badge tone="gray">{permission}</Badge>} />
-      <CardBody>
-        <p className="text-slate-600 dark:text-slate-300">
-          {description ?? 'Halaman ini akan diisi pada fase fitur berikutnya.'}
-        </p>
-      </CardBody>
-    </Card>
+    <>
+      <PageHeader
+        title={title}
+        description={description ?? 'Halaman ini diisi pada fase fitur berikutnya.'}
+      />
+      <Card className="mt-6">
+        <div className="m-5 rounded-card border border-dashed border-line px-5 py-10">
+          <p className="text-sm text-muted">Belum ada data untuk ditampilkan.</p>
+          <p className="mt-1 text-xs text-muted">
+            Izin yang dibutuhkan: <span className="num">{permission}</span>
+          </p>
+        </div>
+      </Card>
+    </>
   )
 }

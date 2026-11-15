@@ -15,6 +15,7 @@ export interface DataTableProps<T> {
   rowKey: (row: T) => string
   loading?: boolean
   error?: string
+  onRetry?: () => void
   empty?: string
 }
 
@@ -24,21 +25,26 @@ export function DataTable<T>({
   rowKey,
   loading = false,
   error,
+  onRetry,
   empty = 'Belum ada data.',
 }: DataTableProps<T>) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
-        <thead className="bg-slate-50 text-xs tracking-wide text-slate-500 uppercase dark:bg-slate-800/60">
+        <thead className="text-xs text-muted">
           <tr>
             {columns.map((column) => (
-              <th key={column.key} scope="col" className={cn('px-4 py-3 font-semibold', column.className)}>
+              <th
+                key={column.key}
+                scope="col"
+                className={cn('px-4 py-2.5 font-normal whitespace-nowrap', column.className)}
+              >
                 {column.header}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+        <tbody className="divide-y divide-rule">
           {loading &&
             Array.from({ length: 5 }, (_, index) => (
               <tr key={`skeleton-${index}`}>
@@ -52,15 +58,24 @@ export function DataTable<T>({
 
           {!loading && error && (
             <tr>
-              <td colSpan={columns.length} className="px-4 py-8 text-center text-red-600">
-                {error}
+              <td colSpan={columns.length} className="px-4 py-8 text-center">
+                <p className="text-sm text-negative">{error}</p>
+                {onRetry && (
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    className="mt-2 min-h-11 text-sm font-medium text-ink underline underline-offset-4"
+                  >
+                    Coba lagi
+                  </button>
+                )}
               </td>
             </tr>
           )}
 
           {!loading && !error && rows.length === 0 && (
             <tr>
-              <td colSpan={columns.length} className="px-4 py-8 text-center text-slate-500">
+              <td colSpan={columns.length} className="px-4 py-8 text-center text-sm text-muted">
                 {empty}
               </td>
             </tr>
@@ -69,7 +84,7 @@ export function DataTable<T>({
           {!loading &&
             !error &&
             rows.map((row) => (
-              <tr key={rowKey(row)} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+              <tr key={rowKey(row)} className="hover:bg-raised">
                 {columns.map((column) => (
                   <td key={column.key} className={cn('px-4 py-3', column.className)}>
                     {column.render(row)}

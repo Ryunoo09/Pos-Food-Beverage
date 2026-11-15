@@ -11,9 +11,9 @@ interface ToastItem {
 }
 
 const TONES: Record<ToastTone, string> = {
-  success: 'border-green-600 bg-green-50 text-green-900',
-  error: 'border-red-600 bg-red-50 text-red-900',
-  warning: 'border-amber-500 bg-amber-50 text-amber-900',
+  success: 'border-positive bg-pill-positive text-pill-positive-ink',
+  error: 'border-negative bg-pill-negative text-pill-negative-ink',
+  warning: 'border-warning bg-pill-warning text-pill-warning-ink',
 }
 
 let nextId = 0
@@ -45,7 +45,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={item.id}
             role="status"
-            className={cn('rounded-lg border-l-4 px-4 py-3 text-sm shadow-lg', TONES[item.tone])}
+            className={cn('rounded-control border-l-4 px-4 py-3 text-sm shadow-lg', TONES[item.tone])}
           >
             {item.message}
           </div>

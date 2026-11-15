@@ -17,7 +17,7 @@ export function Input({ label, error, helper, trailing, className, id, ...props 
   return (
     <div className="w-full">
       {label && (
-        <label htmlFor={inputId} className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">
+        <label htmlFor={inputId} className="mb-2 block text-sm font-medium text-ink">
           {label}
         </label>
       )}
@@ -28,12 +28,11 @@ export function Input({ label, error, helper, trailing, className, id, ...props 
           aria-invalid={error ? true : undefined}
           aria-describedby={describedBy}
           className={cn(
-            'h-11 w-full rounded-lg border bg-white px-3 text-slate-900 outline-none',
-            'placeholder:text-slate-400 focus:ring-2',
-            'dark:bg-slate-900 dark:text-slate-100',
+            'h-11 w-full rounded-control border bg-surface px-3 text-ink outline-none',
+            'placeholder:text-faint focus:ring-2',
             error
-              ? 'border-red-500 focus:border-red-500 focus:ring-red-500/30'
-              : 'border-slate-300 focus:border-brand-500 focus:ring-brand-500/30 dark:border-slate-700',
+              ? 'border-negative focus:border-negative focus:ring-negative/20'
+              : 'border-control focus:border-brand-600 focus:ring-brand-600/20',
             trailing && 'pr-11',
             className,
           )}
@@ -41,11 +40,11 @@ export function Input({ label, error, helper, trailing, className, id, ...props 
         {trailing && <div className="absolute inset-y-0 right-0 grid w-11 place-items-center">{trailing}</div>}
       </div>
       {error ? (
-        <p id={`${inputId}-error`} className="mt-1 text-sm text-red-600">
+        <p id={`${inputId}-error`} className="mt-1.5 text-sm text-negative">
           {error}
         </p>
       ) : helper ? (
-        <p id={`${inputId}-helper`} className="mt-1 text-sm text-slate-500">
+        <p id={`${inputId}-helper`} className="mt-1.5 text-sm text-muted">
           {helper}
         </p>
       ) : null}

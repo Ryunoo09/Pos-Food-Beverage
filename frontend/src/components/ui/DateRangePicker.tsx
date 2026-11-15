@@ -12,11 +12,11 @@ export interface DateRangePickerProps {
 /** Memakai <input type="date"> native agar tidak perlu library kalender. */
 export function DateRangePicker({ value, onChange, label = 'Rentang tanggal' }: DateRangePickerProps) {
   const inputClass =
-    'h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100'
+    'h-11 rounded-control border border-control bg-surface px-3 text-sm text-ink outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/20   '
 
   return (
     <fieldset className="w-full">
-      <legend className="mb-1 text-sm font-medium text-slate-700 dark:text-slate-200">{label}</legend>
+      <legend className="mb-1 text-sm font-medium text-ink ">{label}</legend>
       <div className="flex flex-wrap items-center gap-2">
         <input
           type="date"
@@ -26,7 +26,7 @@ export function DateRangePicker({ value, onChange, label = 'Rentang tanggal' }: 
           max={value.to || undefined}
           onChange={(event) => onChange({ ...value, from: event.target.value })}
         />
-        <span className="text-slate-400">s/d</span>
+        <span className="text-faint">s/d</span>
         <input
           type="date"
           aria-label="Sampai tanggal"
