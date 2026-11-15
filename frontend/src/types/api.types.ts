@@ -18,4 +18,6 @@ export interface ApiError {
   code: string
   message: string
   details?: unknown
+  /** Dari header Retry-After, mis. saat akun terkunci. */
+  retryAfter?: number
 }

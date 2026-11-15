@@ -1,8 +1,14 @@
+import { Card, CardBody, CardHeader } from '../../components/ui/Card'
+
 export function DashboardPage() {
   return (
-    <main className="p-6">
-      <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
-      <p className="mt-2 text-slate-600">Fase setup selesai</p>
-    </main>
+    <Card>
+      <CardHeader title="Dashboard" />
+      <CardBody>
+        <p className="text-slate-600 dark:text-slate-300">
+          Ringkasan penjualan, pesanan aktif, dan stok kritis akan tampil di sini pada fase fitur.
+        </p>
+      </CardBody>
+    </Card>
   )
 }

@@ -1,16 +1,15 @@
 import { create } from 'zustand'
+import type { AuthUser } from '../types/auth.types'
 
-export interface AuthUser {
-  id: string
-  username: string
-  fullName: string
-}
+export type SessionStatus = 'idle' | 'loading' | 'authenticated' | 'anonymous'
 
 interface AuthState {
   user: AuthUser | null
   accessToken: string | null
   permissions: string[]
+  status: SessionStatus
   setAuth: (user: AuthUser, accessToken: string, permissions: string[]) => void
+  setStatus: (status: SessionStatus) => void
   clearAuth: () => void
   hasPermission: (permission: string) => boolean
 }
@@ -20,7 +19,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   accessToken: null,
   permissions: [],
-  setAuth: (user, accessToken, permissions) => set({ user, accessToken, permissions }),
-  clearAuth: () => set({ user: null, accessToken: null, permissions: [] }),
+  status: 'idle',
+  setAuth: (user, accessToken, permissions) =>
+    set({ user, accessToken, permissions, status: 'authenticated' }),
+  setStatus: (status) => set({ status }),
+  clearAuth: () => set({ user: null, accessToken: null, permissions: [], status: 'anonymous' }),
   hasPermission: (permission) => get().permissions.includes(permission),
 }))
