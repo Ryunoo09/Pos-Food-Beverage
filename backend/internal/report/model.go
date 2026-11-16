@@ -87,13 +87,14 @@ type ExpenseLine struct {
 // InventoryReport: stok saat ini + valuasi, ringkasan movement, waste, dan
 // hasil opname pada periode.
 type InventoryReport struct {
-	From       string           `json:"from"`
-	To         string           `json:"to"`
-	StockValue string           `json:"stock_value"`
-	Stock      []StockLine      `json:"stock"`
-	Movements  []MovementLine   `json:"movements"`
-	Waste      []WasteLine      `json:"waste"`
-	Opnames    []OpnameLine     `json:"opnames"`
+	From       string         `json:"from"`
+	To         string         `json:"to"`
+	StockValue string         `json:"stock_value"`
+	WasteValue string         `json:"waste_value"`
+	Stock      []StockLine    `json:"stock"`
+	Movements  []MovementLine `json:"movements"`
+	Waste      []WasteLine    `json:"waste"`
+	Opnames    []OpnameLine   `json:"opnames"`
 }
 
 type StockLine struct {
@@ -130,8 +131,9 @@ type OpnameLine struct {
 	TotalDiffVal string `json:"total_difference_value"`
 }
 
-// MenuPerformanceReport: margin per menu, urut margin terendah supaya menu
-// yang merugi muncul lebih dulu.
+// MenuPerformanceReport: omzet dan margin per menu, urut omzet terbesar
+// supaya menu yang paling menentukan pendapatan berada di atas. Menu bermargin
+// rendah dibaca dari kolom margin, bukan dari urutan.
 type MenuPerformanceReport struct {
 	From  string           `json:"from"`
 	To    string           `json:"to"`

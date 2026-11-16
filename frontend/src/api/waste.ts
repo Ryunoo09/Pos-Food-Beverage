@@ -19,8 +19,20 @@ export const WASTE_REASONS = [
   { value: 'CUSTOMER_RETURN', label: 'Dikembalikan pelanggan' },
 ] as const
 
-export const wasteReasonLabel = (code?: string) =>
-  WASTE_REASONS.find((reason) => reason.value === code)?.label ?? code ?? '-'
+// Data lama sempat memakai kode berbahasa Indonesia untuk alasan yang sama.
+// Tanpa alias ini laporan menampilkan kode mentah seperti "RUSAK".
+const REASON_ALIASES: Record<string, string> = {
+  RUSAK: 'DAMAGED',
+  TUMPAH: 'SPILLED',
+  KEDALUWARSA: 'EXPIRED',
+  SALAH_BUAT: 'MISTAKE',
+}
+
+export const wasteReasonLabel = (code?: string) => {
+  if (!code) return '-'
+  const normalized = REASON_ALIASES[code] ?? code
+  return WASTE_REASONS.find((reason) => reason.value === normalized)?.label ?? code
+}
 
 export interface WasteRecord {
   id: string

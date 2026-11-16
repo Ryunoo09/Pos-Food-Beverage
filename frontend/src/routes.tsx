@@ -25,7 +25,10 @@ import { PurchaseDetailPage } from './features/purchases/PurchaseDetailPage'
 import { PurchasePage } from './features/purchases/PurchasePage'
 import { PlaceholderPage } from './features/shared/PlaceholderPage'
 import { FinancialReportPage } from './features/reports/FinancialReportPage'
+import { InventoryReportPage } from './features/reports/InventoryReportPage'
+import { MenuPerformanceReportPage } from './features/reports/MenuPerformanceReportPage'
 import { SalesReportPage } from './features/reports/SalesReportPage'
+import { ShiftReportPage } from './features/reports/ShiftReportPage'
 import { TaxSettingsPage } from './features/settings/TaxSettingsPage'
 import { ShiftDetailPage } from './features/shifts/ShiftDetailPage'
 import { ShiftsPage } from './features/shifts/ShiftsPage'
@@ -202,10 +205,29 @@ export const router = createBrowserRouter([
               </PermissionGate>
             ),
           },
-          { path: '/reports/inventory', element: page('Laporan Inventori', 'reports.inventory.view') },
+          {
+            path: '/reports/inventory',
+            element: (
+              <PermissionGate perm="reports.inventory.view" redirect="/403">
+                <InventoryReportPage />
+              </PermissionGate>
+            ),
+          },
           {
             path: '/reports/menu-performance',
-            element: page('Performa Menu', 'reports.menu_performance.view'),
+            element: (
+              <PermissionGate perm="reports.menu_performance.view" redirect="/403">
+                <MenuPerformanceReportPage />
+              </PermissionGate>
+            ),
+          },
+          {
+            path: '/reports/shifts',
+            element: (
+              <PermissionGate perm="reports.shift.view" redirect="/403">
+                <ShiftReportPage />
+              </PermissionGate>
+            ),
           },
           { path: '/settings', element: page('Pengaturan', 'settings.view') },
           { path: '/settings/users', element: page('Pengguna', 'users.view') },

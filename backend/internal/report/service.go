@@ -197,11 +197,20 @@ func (s *Service) Inventory(ctx context.Context, actor auth.Actor, from, to stri
 		return nil, err
 	}
 
+	// Total waste dijumlah di server supaya klien tidak menjumlahkan uang.
+	wasteTotal := "0"
+	for _, w := range waste {
+		wasteTotal, err = addMoney(wasteTotal, w.Cost)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if err := t.commit(ctx); err != nil {
 		return nil, err
 	}
 	return &InventoryReport{
-		From: fromDate, To: toDate, StockValue: value,
+		From: fromDate, To: toDate, StockValue: value, WasteValue: wasteTotal,
 		Stock: stock, Movements: movements, Waste: waste, Opnames: opnames,
 	}, nil
 }

@@ -60,7 +60,30 @@ const OPNAME_TONES: Record<string, StatusTone> = {
   SUBMITTED: 'blue',
   APPROVED: 'green',
   REJECTED: 'red',
+  COMPLETED: 'green',
   CANCELLED: 'gray',
+}
+
+const OPNAME_LABELS: Record<string, string> = {
+  DRAFT: 'Draft',
+  IN_PROGRESS: 'Berjalan',
+  SUBMITTED: 'Diajukan',
+  APPROVED: 'Disetujui',
+  REJECTED: 'Ditolak',
+  COMPLETED: 'Selesai',
+  CANCELLED: 'Dibatalkan',
+}
+
+const SHIFT_TONES: Record<string, StatusTone> = {
+  OPEN: 'yellow',
+  CLOSED: 'blue',
+  REVIEWED: 'green',
+}
+
+const SHIFT_LABELS: Record<string, string> = {
+  OPEN: 'Terbuka',
+  CLOSED: 'Ditutup',
+  REVIEWED: 'Ditinjau',
 }
 
 const PO_TONES: Record<string, StatusTone> = {
@@ -79,6 +102,18 @@ const WASTE_TONES: Record<string, StatusTone> = {
 
 export function opnameStatusTone(status: string): StatusTone {
   return OPNAME_TONES[status] ?? 'gray'
+}
+
+export function opnameStatusLabel(status: string): string {
+  return OPNAME_LABELS[status] ?? status
+}
+
+export function shiftStatusTone(status: string): StatusTone {
+  return SHIFT_TONES[status] ?? 'gray'
+}
+
+export function shiftStatusLabel(status: string): string {
+  return SHIFT_LABELS[status] ?? status
 }
 
 export function purchaseStatusTone(status: string): StatusTone {

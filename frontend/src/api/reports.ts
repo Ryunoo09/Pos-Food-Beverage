@@ -107,6 +107,7 @@ export interface InventoryReport {
   from: string
   to: string
   stock_value: string
+  waste_value: string
   stock: StockLine[]
   movements: MovementLine[]
   waste: WasteLine[]
