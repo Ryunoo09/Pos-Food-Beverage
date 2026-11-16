@@ -31,6 +31,7 @@ import (
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/pos"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/purchase"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/recipe"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/report"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/settings"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/shift"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/supplier"
@@ -243,6 +244,14 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("POST /api/v1/pos/calculate", authed(perm("orders.create")(http.HandlerFunc(posHandler.PreviewTotal))))
 
 	auditWriter := audit.NewWriter(pool)
+
+	reportHandler := report.NewHandler(report.NewService(report.NewRepository(pool)), auditWriter)
+	mux.Handle("GET /api/v1/reports/sales", authed(perm("reports.sales.view")(http.HandlerFunc(reportHandler.Sales))))
+	mux.Handle("GET /api/v1/reports/financial", authed(perm("reports.profit.view")(http.HandlerFunc(reportHandler.Financial))))
+	mux.Handle("GET /api/v1/reports/inventory", authed(perm("reports.inventory.view")(http.HandlerFunc(reportHandler.Inventory))))
+	mux.Handle("GET /api/v1/reports/menu-performance", authed(perm("reports.menu_performance.view")(http.HandlerFunc(reportHandler.MenuPerformance))))
+	mux.Handle("GET /api/v1/reports/shifts", authed(perm("reports.shift.view")(http.HandlerFunc(reportHandler.Shifts))))
+	mux.Handle("GET /api/v1/reports/{type}/export", authed(perm("reports.export")(http.HandlerFunc(reportHandler.Export))))
 
 	orderHandler := order.NewHandler(order.NewService(order.NewRepository(pool)))
 	mux.Handle("GET /api/v1/orders", authed(perm("orders.view")(http.HandlerFunc(orderHandler.List))))
