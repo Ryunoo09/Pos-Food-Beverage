@@ -116,6 +116,65 @@ func (s *Service) SetTaxActive(ctx context.Context, actor auth.Actor, id string,
 	return err
 }
 
+func (s *Service) PaymentMethods(ctx context.Context, actor auth.Actor) ([]PaymentMethod, error) {
+	if actor.OutletID == "" {
+		return nil, outletMissing()
+	}
+	return s.repo.PaymentMethods(ctx, actor.OutletID)
+}
+
+func (s *Service) CreatePaymentMethod(ctx context.Context, actor auth.Actor, in PaymentMethodInput) (*PaymentMethod, error) {
+	if actor.OutletID == "" {
+		return nil, outletMissing()
+	}
+
+	in.Name = strings.TrimSpace(in.Name)
+	if in.Name == "" {
+		return nil, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR", "Nama metode bayar wajib diisi.")
+	}
+
+	// Kode disimpan huruf besar dan hanya huruf/angka/garis bawah, karena
+	// dipakai sebagai kunci di transaksi pembayaran dan laporan.
+	code := strings.ToUpper(strings.TrimSpace(in.Code))
+	if code == "" {
+		return nil, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR", "Kode metode bayar wajib diisi.")
+	}
+	for _, r := range code {
+		if !(r >= 'A' && r <= 'Z') && !(r >= '0' && r <= '9') && r != '_' {
+			return nil, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR",
+				"Kode hanya boleh huruf, angka, dan garis bawah.")
+		}
+	}
+	in.Code = code
+
+	if in.Provider != nil {
+		trimmed := strings.TrimSpace(*in.Provider)
+		if trimmed == "" {
+			in.Provider = nil
+		} else {
+			in.Provider = &trimmed
+		}
+	}
+
+	item, err := s.repo.CreatePaymentMethod(ctx, actor.OutletID, in)
+	if errors.Is(err, ErrDuplicate) {
+		return nil, httpx.NewError(http.StatusConflict, "PAYMENT_METHOD_DUPLICATE",
+			"Kode metode bayar sudah dipakai.")
+	}
+	return item, err
+}
+
+func (s *Service) SetPaymentMethodActive(ctx context.Context, actor auth.Actor, id string, active bool) error {
+	if actor.OutletID == "" {
+		return outletMissing()
+	}
+	err := s.repo.SetPaymentMethodActive(ctx, actor.OutletID, id, active)
+	if errors.Is(err, ErrNotFound) {
+		return httpx.NewError(http.StatusNotFound, "PAYMENT_METHOD_NOT_FOUND", "Metode bayar tidak ditemukan.")
+	}
+	return err
+}
+
 func normalizePercent(raw *string) (*string, error) {
 	if raw == nil {
 		return nil, nil

@@ -6,10 +6,14 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var ErrNotFound = errors.New("pengaturan tidak ditemukan")
+
+// ErrDuplicate muncul saat kode metode bayar sudah dipakai di outlet yang sama.
+var ErrDuplicate = errors.New("kode sudah dipakai")
 
 type Repository struct {
 	pool *pgxpool.Pool
@@ -134,6 +138,68 @@ func (r *Repository) SetTaxActive(ctx context.Context, outletID, id string, acti
 		id, outletID, active)
 	if err != nil {
 		return fmt.Errorf("setTaxActive: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *Repository) PaymentMethods(ctx context.Context, outletID string) ([]PaymentMethod, error) {
+	const q = `
+		SELECT id, code, name, is_active, requires_reference, is_cash,
+		       COALESCE(provider, ''), sort_order
+		FROM payment_methods
+		WHERE outlet_id = $1
+		ORDER BY sort_order, code`
+
+	rows, err := r.pool.Query(ctx, q, outletID)
+	if err != nil {
+		return nil, fmt.Errorf("paymentMethods: %w", err)
+	}
+	defer rows.Close()
+
+	items := []PaymentMethod{}
+	for rows.Next() {
+		var m PaymentMethod
+		if err := rows.Scan(&m.ID, &m.Code, &m.Name, &m.IsActive, &m.RequiresReference,
+			&m.IsCash, &m.Provider, &m.SortOrder); err != nil {
+			return nil, fmt.Errorf("scan paymentMethod: %w", err)
+		}
+		items = append(items, m)
+	}
+	return items, rows.Err()
+}
+
+// CreatePaymentMethod menyimpan metode baru. is_cash ditentukan otomatis:
+// kode CASH adalah satu-satunya metode yang menggerakkan kas laci.
+func (r *Repository) CreatePaymentMethod(ctx context.Context, outletID string, in PaymentMethodInput) (*PaymentMethod, error) {
+	const q = `
+		INSERT INTO payment_methods (outlet_id, code, name, requires_reference, is_cash, provider, sort_order)
+		VALUES ($1, $2, $3, COALESCE($4, false), $2 = 'CASH', $5, COALESCE($6, 0))
+		RETURNING id, code, name, is_active, requires_reference, is_cash,
+		          COALESCE(provider, ''), sort_order`
+
+	m := &PaymentMethod{}
+	err := r.pool.QueryRow(ctx, q, outletID, in.Code, in.Name, in.RequiresReference,
+		in.Provider, in.SortOrder).Scan(&m.ID, &m.Code, &m.Name, &m.IsActive,
+		&m.RequiresReference, &m.IsCash, &m.Provider, &m.SortOrder)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, ErrDuplicate
+		}
+		return nil, fmt.Errorf("createPaymentMethod: %w", err)
+	}
+	return m, nil
+}
+
+func (r *Repository) SetPaymentMethodActive(ctx context.Context, outletID, id string, active bool) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE payment_methods SET is_active = $3 WHERE id = $1 AND outlet_id = $2`,
+		id, outletID, active)
+	if err != nil {
+		return fmt.Errorf("setPaymentMethodActive: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound

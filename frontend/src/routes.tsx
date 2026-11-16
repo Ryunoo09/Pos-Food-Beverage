@@ -23,26 +23,22 @@ import { OrdersPage } from './features/orders/OrdersPage'
 import { PosPage } from './features/pos/PosPage'
 import { PurchaseDetailPage } from './features/purchases/PurchaseDetailPage'
 import { PurchasePage } from './features/purchases/PurchasePage'
-import { PlaceholderPage } from './features/shared/PlaceholderPage'
 import { FinancialReportPage } from './features/reports/FinancialReportPage'
 import { InventoryReportPage } from './features/reports/InventoryReportPage'
 import { MenuPerformanceReportPage } from './features/reports/MenuPerformanceReportPage'
 import { SalesReportPage } from './features/reports/SalesReportPage'
 import { ShiftReportPage } from './features/reports/ShiftReportPage'
 import { TaxSettingsPage } from './features/settings/TaxSettingsPage'
+import { SettingsPage } from './features/settings/SettingsPage'
+import { UsersPage } from './features/settings/UsersPage'
+import { RolesPage } from './features/settings/RolesPage'
+import { PaymentMethodsPage } from './features/settings/PaymentMethodsPage'
+import { AuditLogPage } from './features/audit/AuditLogPage'
 import { ShiftDetailPage } from './features/shifts/ShiftDetailPage'
 import { ShiftsPage } from './features/shifts/ShiftsPage'
 import { SuppliersPage } from './features/suppliers/SuppliersPage'
 import { TablesPage } from './features/tables/TablesPage'
 import { WastePage } from './features/waste/WastePage'
-
-function page(title: string, permission: string, description?: string) {
-  return (
-    <PermissionGate perm={permission} redirect="/403">
-      <PlaceholderPage title={title} permission={permission} description={description} />
-    </PermissionGate>
-  )
-}
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -188,7 +184,7 @@ export const router = createBrowserRouter([
               </PermissionGate>
             ),
           },
-          { path: '/reports', element: page('Laporan', 'reports.sales.view') },
+          { path: '/reports', element: <Navigate to="/reports/sales" replace /> },
           {
             path: '/reports/sales',
             element: (
@@ -229,9 +225,30 @@ export const router = createBrowserRouter([
               </PermissionGate>
             ),
           },
-          { path: '/settings', element: page('Pengaturan', 'settings.view') },
-          { path: '/settings/users', element: page('Pengguna', 'users.view') },
-          { path: '/settings/roles', element: page('Role', 'roles.view') },
+          {
+            path: '/settings',
+            element: (
+              <PermissionGate perm="settings.view" redirect="/403">
+                <SettingsPage />
+              </PermissionGate>
+            ),
+          },
+          {
+            path: '/settings/users',
+            element: (
+              <PermissionGate perm="users.view" redirect="/403">
+                <UsersPage />
+              </PermissionGate>
+            ),
+          },
+          {
+            path: '/settings/roles',
+            element: (
+              <PermissionGate perm="roles.view" redirect="/403">
+                <RolesPage />
+              </PermissionGate>
+            ),
+          },
           {
             path: '/settings/tax',
             element: (
@@ -240,7 +257,22 @@ export const router = createBrowserRouter([
               </PermissionGate>
             ),
           },
-          { path: '/settings/payment-methods', element: page('Metode Pembayaran', 'settings.view') },
+          {
+            path: '/settings/payment-methods',
+            element: (
+              <PermissionGate perm="settings.view" redirect="/403">
+                <PaymentMethodsPage />
+              </PermissionGate>
+            ),
+          },
+          {
+            path: '/audit-logs',
+            element: (
+              <PermissionGate perm="audit.view" redirect="/403">
+                <AuditLogPage />
+              </PermissionGate>
+            ),
+          },
           { path: '/403', element: <ForbiddenPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],

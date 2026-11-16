@@ -86,11 +86,36 @@ export const SERVICE_TYPES = [
 
 export const DAY_LABELS = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'] as const
 
+export interface PaymentMethod {
+  id: string
+  code: string
+  name: string
+  is_active: boolean
+  requires_reference: boolean
+  is_cash: boolean
+  provider: string
+  sort_order: number
+}
+
 export const settingsApi = {
   outlet: {
     get: () => api.get<ApiResponse<OutletSettings>>('/settings/outlet'),
     update: (body: Partial<OutletSettings>) =>
       api.patch<ApiResponse<OutletSettings>>('/settings/outlet', body),
+  },
+  paymentMethods: {
+    list: () => api.get<ApiResponse<PaymentMethod[]>>('/settings/payment-methods'),
+    create: (body: {
+      code: string
+      name: string
+      requires_reference: boolean
+      provider: string | null
+      sort_order: number
+    }) => api.post<ApiResponse<PaymentMethod>>('/settings/payment-methods', body),
+    activate: (id: string) =>
+      api.post<ApiResponse<PaymentMethod>>(`/settings/payment-methods/${id}/activate`),
+    deactivate: (id: string) =>
+      api.post<ApiResponse<PaymentMethod>>(`/settings/payment-methods/${id}/deactivate`),
   },
   taxes: {
     list: () => api.get<ApiResponse<TaxConfig[]>>('/settings/taxes'),

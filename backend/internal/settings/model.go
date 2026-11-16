@@ -37,3 +37,25 @@ type TaxConfigInput struct {
 	AppliesTo     []string `json:"applies_to"`
 	EffectiveFrom *string  `json:"effective_from"`
 }
+
+// PaymentMethod adalah cara bayar yang tersedia di kasir. Kode dipakai
+// transaksi pembayaran (payments.method_code), jadi kode tidak boleh diubah
+// setelah dipakai; yang bisa diubah hanya nama, urutan, dan status aktif.
+type PaymentMethod struct {
+	ID                string `json:"id"`
+	Code              string `json:"code"`
+	Name              string `json:"name"`
+	IsActive          bool   `json:"is_active"`
+	RequiresReference bool   `json:"requires_reference"`
+	IsCash            bool   `json:"is_cash"`
+	Provider          string `json:"provider"`
+	SortOrder         int    `json:"sort_order"`
+}
+
+type PaymentMethodInput struct {
+	Code              string  `json:"code"`
+	Name              string  `json:"name"`
+	RequiresReference *bool   `json:"requires_reference"`
+	Provider          *string `json:"provider"`
+	SortOrder         *int    `json:"sort_order"`
+}

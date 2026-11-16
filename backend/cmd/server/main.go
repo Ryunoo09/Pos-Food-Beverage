@@ -231,6 +231,10 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("POST /api/v1/settings/taxes", authed(perm("tax.manage")(http.HandlerFunc(settingsHandler.CreateTax))))
 	mux.Handle("POST /api/v1/settings/taxes/{id}/deactivate", authed(perm("tax.manage")(settingsHandler.SetTaxActive(false))))
 	mux.Handle("POST /api/v1/settings/taxes/{id}/activate", authed(perm("tax.manage")(settingsHandler.SetTaxActive(true))))
+	mux.Handle("GET /api/v1/settings/payment-methods", authed(perm("settings.view")(http.HandlerFunc(settingsHandler.ListPaymentMethods))))
+	mux.Handle("POST /api/v1/settings/payment-methods", authed(perm("settings.manage")(http.HandlerFunc(settingsHandler.CreatePaymentMethod))))
+	mux.Handle("POST /api/v1/settings/payment-methods/{id}/deactivate", authed(perm("settings.manage")(settingsHandler.SetPaymentMethodActive(false))))
+	mux.Handle("POST /api/v1/settings/payment-methods/{id}/activate", authed(perm("settings.manage")(settingsHandler.SetPaymentMethodActive(true))))
 
 	discountHandler := discount.NewHandler(discount.NewService(discount.NewRepository(pool)))
 	mux.Handle("GET /api/v1/discounts", authed(perm("orders.view")(http.HandlerFunc(discountHandler.List))))
