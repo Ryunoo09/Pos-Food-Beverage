@@ -463,6 +463,22 @@ func (s *Service) confirm(ctx context.Context, actor auth.Actor, orderID string)
 	}
 	defer tx.Rollback(ctx)
 
+	// Kunci baris pesanan lalu periksa ulang status DRAFT di dalam transaksi.
+	// Tanpa ini dua request confirm bersamaan sama-sama lolos pemeriksaan
+	// "masih DRAFT" dan memotong stok dua kali (sudah terbukti: stok 100 -> 80
+	// untuk pesanan satu item yang butuh 10).
+	status, _, found, err := s.repo.LockOrder(ctx, tx, actor.OutletID, orderID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, notFound()
+	}
+	if status != "DRAFT" {
+		return nil, httpx.NewError(http.StatusConflict, "ORDER_NOT_DRAFT",
+			"Pesanan sudah dikonfirmasi dan tidak bisa diubah.")
+	}
+
 	// Kurangi stok bahan dan hitung HPP dalam transaksi yang sama (BR-TX-1).
 	lines, unknown, err := s.repo.StockLines(ctx, tx, o.ID)
 	if err != nil {
@@ -575,6 +591,10 @@ func (s *Service) AddItem(ctx context.Context, actor auth.Actor, orderID string,
 	lineTotal := unitPrice.Add(modifiersTotal).Mul(money.FromInt(int64(in.Quantity)))
 	if _, err := s.repo.AddItem(ctx, o.ID, sv, in, choices, money.Format(modifiersTotal),
 		money.Format(lineTotal)); err != nil {
+		if errors.Is(err, ErrNotDraft) {
+			return nil, httpx.NewError(http.StatusConflict, "ORDER_NOT_DRAFT",
+				"Pesanan sudah dikonfirmasi dan tidak bisa diubah.")
+		}
 		return nil, err
 	}
 	return s.recalc(ctx, actor, o.ID)

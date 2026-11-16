@@ -17,6 +17,10 @@ import (
 
 var ErrNotFound = errors.New("pesanan tidak ditemukan")
 
+// ErrNotDraft muncul saat operasi tulis kalah balapan dengan confirm: baris
+// pesanan sudah bukan DRAFT ketika INSERT/UPDATE dijalankan.
+var ErrNotDraft = errors.New("pesanan sudah dikonfirmasi")
+
 type Repository struct {
 	pool *pgxpool.Pool
 }
@@ -275,6 +279,22 @@ func (r *Repository) AddItem(ctx context.Context, orderID string, sv saleVariant
 		return "", fmt.Errorf("addItem: begin: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	// Kunci baris pesanan lebih dulu agar bersaing langsung dengan confirm:
+	// confirm memegang FOR UPDATE selama memotong stok, jadi penambahan item
+	// akan menunggu lalu melihat status terbaru, bukan DRAFT yang sudah basi.
+	var status string
+	lockErr := tx.QueryRow(ctx,
+		`SELECT status FROM orders WHERE id = $1 FOR UPDATE`, orderID).Scan(&status)
+	if errors.Is(lockErr, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if lockErr != nil {
+		return "", fmt.Errorf("addItem: lock order: %w", lockErr)
+	}
+	if status != "DRAFT" {
+		return "", ErrNotDraft
+	}
 
 	const q = `
 		INSERT INTO order_items (order_id, product_id, variant_id, product_name_snapshot,
