@@ -111,4 +111,43 @@
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
+
+  /*
+   * Gulir tanpa batang terlihat. Dipakai pada kolom menu vertikal yang sempit:
+   * batang abu-abu bawaan OS merusak bingkai L-frame dan memakan lebar label.
+   * Gulir tetap berfungsi (roda, trackpad, keyboard). Saat kursor di atasnya,
+   * batang tipis muncul kembali supaya posisi gulir tetap terbaca.
+   */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    overscroll-behavior: contain;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  .no-scrollbar:hover,
+  .no-scrollbar:focus-visible {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-control) transparent;
+  }
+
+  .no-scrollbar:hover::-webkit-scrollbar,
+  .no-scrollbar:focus-visible::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .no-scrollbar:hover::-webkit-scrollbar-thumb,
+  .no-scrollbar:focus-visible::-webkit-scrollbar-thumb {
+    background-color: var(--color-control);
+    border-radius: 999px;
+  }
+
+  .no-scrollbar:hover::-webkit-scrollbar-track,
+  .no-scrollbar:focus-visible::-webkit-scrollbar-track {
+    background-color: transparent;
+  }
 }

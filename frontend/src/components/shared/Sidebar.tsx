@@ -55,13 +55,28 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-2 pb-4">
+        {/*
+          Menu lebih tinggi dari viewport pada layar pendek, jadi tetap perlu
+          digulir. Scrollbar sengaja tidak terlihat: menu adalah satu kolom
+          tipis, dan batang abu-abu di dalamnya terbaca sebagai kotak kedua di
+          samping lembar kerja. Gulir roda/trackpad dan panah tetap bekerja —
+          tautan di dalam nav fokusable, jadi fokus keyboard ikut menggulir
+          nav-nya. Kontainer nav sendiri tidak diberi tabIndex: focus ring
+          persegi selebar nav terbaca seperti kotak error. Batang tipis muncul
+          kembali saat kursor di atas nav supaya posisi gulir tetap terbaca.
+        */}
+        <nav
+          className="no-scrollbar -mx-1 min-h-0 flex-1 overflow-y-auto px-3 pb-4"
+          aria-label="Menu utama"
+        >
           {navGroups.map((group) => {
             const items = group.items.filter((item) => permissions.includes(item.permission))
             if (items.length === 0) return null
             return (
               <div key={group.label}>
-                <p className="px-2.5 pt-4 pb-1 text-xs text-muted">{group.label}</p>
+                <p className="px-2.5 pt-4 pb-1 text-[11px] font-medium tracking-wide text-faint uppercase">
+                  {group.label}
+                </p>
                 <ul>
                   {items.map(({ label, to, icon: Icon }) => (
                     <li key={to}>
@@ -70,15 +85,30 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                         onClick={onClose}
                         className={({ isActive }) =>
                           cn(
-                            'flex min-h-11 items-center gap-2.5 rounded-control px-2.5 text-sm',
+                            'group relative flex min-h-11 items-center gap-2.5 rounded-control px-2.5 text-sm transition-colors',
                             isActive
                               ? 'bg-active font-medium text-ink'
                               : 'text-muted hover:bg-raised hover:text-ink',
                           )
                         }
                       >
-                        <Icon className="size-4 shrink-0" strokeWidth={1.5} />
-                        <span className="truncate">{label}</span>
+                        {({ isActive }) => (
+                          <>
+                            {/* Penanda aktif: garis brand tipis, bukan sekadar latar. */}
+                            <span
+                              aria-hidden="true"
+                              className={cn(
+                                'absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-full bg-brand-600 transition-opacity',
+                                isActive ? 'opacity-100' : 'opacity-0',
+                              )}
+                            />
+                            <Icon
+                              className="size-4 shrink-0"
+                              strokeWidth={isActive ? 2 : 1.5}
+                            />
+                            <span className="truncate">{label}</span>
+                          </>
+                        )}
                       </NavLink>
                     </li>
                   ))}
