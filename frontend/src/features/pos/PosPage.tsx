@@ -20,6 +20,7 @@ import type {
   ServiceType,
 } from '../../api/orders'
 import { shiftApi } from '../../api/shifts'
+import { settingsApi } from '../../api/settings'
 import { tableApi } from '../../api/tables'
 import type { Table } from '../../api/tables'
 import { Badge } from '../../components/ui/Badge'
@@ -687,7 +688,27 @@ function PaymentForm({
   const [amount, setAmount] = useState(order.total_amount)
   const [cashReceived, setCashReceived] = useState('')
   const [reference, setReference] = useState('')
-  const meta = PAYMENT_METHODS.find((item) => item.code === method) ?? PAYMENT_METHODS[0]
+
+  // Metode bayar diambil dari pengaturan outlet agar metode yang dinonaktifkan
+  // langsung hilang dari kasir. Bila daftar kosong/gagal, pakai konstanta
+  // bawaan supaya kasir tidak macet.
+  const methodsQuery = useQuery({
+    queryKey: ['payment-methods-active'],
+    queryFn: async () =>
+      (await settingsApi.paymentMethods.list()).data.data.filter((item) => item.is_active),
+    staleTime: 5 * 60_000,
+  })
+  const methods =
+    (methodsQuery.data ?? []).length > 0
+      ? (methodsQuery.data ?? []).map((item) => ({
+          code: item.code,
+          label: item.name,
+          isCash: item.is_cash,
+          requiresReference: item.requires_reference,
+        }))
+      : PAYMENT_METHODS.map((item) => ({ ...item }))
+
+  const meta = methods.find((item) => item.code === method) ?? methods[0]
   const validAmount = /^\d+(\.\d+)?$/.test(amount.trim()) && Number(amount) > 0
 
   return (
@@ -706,7 +727,7 @@ function PaymentForm({
       }}
     >
       <div className="grid grid-cols-2 gap-2">
-        {PAYMENT_METHODS.map((item) => (
+        {methods.map((item) => (
           <button
             key={item.code}
             type="button"

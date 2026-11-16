@@ -132,7 +132,8 @@ export interface CancelInput {
   mode?: 'SALE_REVERSAL' | 'WASTE'
 }
 
-// Metode bayar seed di tabel payment_methods; belum ada endpoint daftar metode.
+// Cadangan bila outlet belum punya baris payment_methods, dan untuk memberi
+// label pada pembayaran lama. Daftar aktif diambil dari /settings/payment-methods.
 export const PAYMENT_METHODS = [
   { code: 'CASH', label: 'Tunai', isCash: true, requiresReference: false },
   { code: 'QRIS', label: 'QRIS', isCash: false, requiresReference: true },
