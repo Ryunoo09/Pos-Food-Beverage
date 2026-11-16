@@ -2,12 +2,92 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Design tokens — style "framed-sheet" (seed 1284058790).
+ * Chrome is one low-chroma green-grey L-frame (herbs and fresh stock, the
+ * product's world); work sits on a white sheet inset 8px from the right and
+ * bottom edges, 1px edge, 16px corners, no shadow. The brand hue appears only
+ * on the mark and on the main data element.
+ */
 @theme {
+  --font-sans: 'IBM Plex Sans Variable', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --color-ground: #f2f4f1;
+  --color-surface: #ffffff;
+  --color-raised: #eef1ec;
+  --color-active: #e6eae3;
+  --color-line: #e0e5dc;
+  --color-rule: #edf0ea;
+  --color-control: #c8cec5;
+  --color-ink: #131416;
+  --color-muted: #5d5f60;
+  --color-faint: #6b6b6b;
+
   --color-brand-50: #fff7ed;
   --color-brand-100: #ffedd5;
   --color-brand-500: #f97316;
   --color-brand-600: #ea580c;
   --color-brand-700: #c2410c;
+  --color-brand-800: #9a3412;
+
+  --color-chart-1: #c2410c;
+  --color-chart-2: #1b6c80;
+  --color-chart-3: #a86f0c;
+
+  --color-positive: #1e7b4f;
+  --color-negative: #c4242a;
+  --color-warning: #92400e;
+
+  /* Status pills: pale tint, dark text of the same hue. */
+  --color-pill-positive: #dcfae5;
+  --color-pill-positive-ink: #04250e;
+  --color-pill-negative: #ffedea;
+  --color-pill-negative-ink: #831c1e;
+  --color-pill-warning: #fffbeb;
+  --color-pill-warning-ink: #92400e;
+  --color-pill-neutral: #e6eae3;
+  --color-pill-neutral-ink: #353736;
+  --color-pill-info: #e4eff2;
+  --color-pill-info-ink: #0f3c46;
+
+  --radius-chip: 4px;
+  --radius-card: 8px;
+  --radius-control: 6px;
+  --radius-sheet: 16px;
+}
+
+/* Dark: true neutral darks, lightness steps, colour only on data. */
+.dark {
+  --color-ground: #0b0b0c;
+  --color-surface: #111111;
+  --color-raised: #1a1a1a;
+  --color-active: #222222;
+  --color-line: #2a2a2a;
+  --color-rule: #1c1c1c;
+  --color-control: #444444;
+  --color-ink: #ffffff;
+  --color-muted: #b4b4b4;
+  --color-faint: #949494;
+
+  --color-chart-1: #f97316;
+  --color-chart-2: #4c9cb0;
+  --color-chart-3: #d9a13a;
+
+  --color-positive: #3fc07a;
+  --color-negative: #e5566f;
+  --color-warning: #fbbf24;
+
+  --color-pill-positive: #172a1d;
+  --color-pill-positive-ink: #3fc07a;
+  --color-pill-negative: #2c1a20;
+  --color-pill-negative-ink: #e5566f;
+  --color-pill-warning: #2a2314;
+  --color-pill-warning-ink: #fbbf24;
+  --color-pill-neutral: #222222;
+  --color-pill-neutral-ink: #d8d8d8;
+  --color-pill-info: #16282c;
+  --color-pill-info-ink: #7fc4d4;
 }
 
 @layer base {
@@ -16,6 +96,58 @@
   }
 
   body {
-    @apply bg-slate-100 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+    @apply bg-ground font-sans text-ink antialiased;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-600;
+  }
+}
+
+@layer utilities {
+  /* Every figure in the product is set in the mono face: receipts and price
+     lists are what this app produces. One job, one face. */
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /*
+   * Gulir tanpa batang terlihat. Dipakai pada kolom menu vertikal yang sempit:
+   * batang abu-abu bawaan OS merusak bingkai L-frame dan memakan lebar label.
+   * Gulir tetap berfungsi (roda, trackpad, keyboard). Saat kursor di atasnya,
+   * batang tipis muncul kembali supaya posisi gulir tetap terbaca.
+   */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    overscroll-behavior: contain;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  .no-scrollbar:hover,
+  .no-scrollbar:focus-visible {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-control) transparent;
+  }
+
+  .no-scrollbar:hover::-webkit-scrollbar,
+  .no-scrollbar:focus-visible::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .no-scrollbar:hover::-webkit-scrollbar-thumb,
+  .no-scrollbar:focus-visible::-webkit-scrollbar-thumb {
+    background-color: var(--color-control);
+    border-radius: 999px;
+  }
+
+  .no-scrollbar:hover::-webkit-scrollbar-track,
+  .no-scrollbar:focus-visible::-webkit-scrollbar-track {
+    background-color: transparent;
   }
 }

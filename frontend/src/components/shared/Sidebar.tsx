@@ -1,13 +1,17 @@
-import { LogOut, Menu, X } from 'lucide-react'
-import { useState } from 'react'
+import { LogOut, X } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { authApi } from '../../api/auth'
 import { useAuthStore } from '../../store/auth'
 import { cn } from '../../utils/cn'
 import { navGroups } from './nav'
+import { ProductMark } from './ProductMark'
 
-export function Sidebar() {
-  const [open, setOpen] = useState(false)
+export interface SidebarProps {
+  open: boolean
+  onClose: () => void
+}
+
+export function Sidebar({ open, onClose }: SidebarProps) {
   const permissions = useAuthStore((state) => state.permissions)
   const user = useAuthStore((state) => state.user)
   const clearAuth = useAuthStore((state) => state.clearAuth)
@@ -21,68 +25,90 @@ export function Sidebar() {
 
   return (
     <>
-      <button
-        type="button"
-        className="fixed top-3 left-3 z-40 grid size-11 place-items-center rounded-lg bg-white shadow lg:hidden dark:bg-slate-900"
-        onClick={() => setOpen(true)}
-        aria-label="Buka menu"
-      >
-        <Menu className="size-5" />
-      </button>
-
       {open && (
         <div
-          className="fixed inset-0 z-40 bg-slate-900/40 lg:hidden"
-          onClick={() => setOpen(false)}
-          aria-hidden
+          className="fixed inset-0 z-40 bg-ink/40 lg:hidden"
+          onClick={onClose}
+          aria-hidden="true"
         />
       )}
 
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-200 bg-white transition-transform dark:border-slate-800 dark:bg-slate-900',
-          'lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 flex w-57 flex-col bg-ground transition-transform lg:translate-x-0',
           open ? 'translate-x-0' : '-translate-x-full',
         )}
       >
-        <div className="flex h-16 items-center justify-between px-4">
-          <span className="text-lg font-semibold text-brand-600">Food POS</span>
+        <div className="flex h-14 items-center gap-2.5 px-4">
+          <ProductMark className="size-5 shrink-0 text-brand-600" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm leading-tight font-semibold">Food POS</p>
+            <p className="truncate text-[11px] leading-tight text-muted">Kasir &amp; dapur</p>
+          </div>
           <button
             type="button"
-            className="grid size-11 place-items-center rounded-lg hover:bg-slate-100 lg:hidden dark:hover:bg-slate-800"
-            onClick={() => setOpen(false)}
+            className="-mr-2 grid size-11 place-items-center rounded-control text-muted hover:bg-raised lg:hidden"
+            onClick={onClose}
             aria-label="Tutup menu"
           >
-            <X className="size-5" />
+            <X className="size-5" strokeWidth={1.5} />
           </button>
         </div>
 
-        <nav className="flex-1 space-y-6 overflow-y-auto px-3 pb-4">
+        {/*
+          Menu lebih tinggi dari viewport pada layar pendek, jadi tetap perlu
+          digulir. Scrollbar sengaja tidak terlihat: menu adalah satu kolom
+          tipis, dan batang abu-abu di dalamnya terbaca sebagai kotak kedua di
+          samping lembar kerja. Gulir roda/trackpad dan panah tetap bekerja —
+          tautan di dalam nav fokusable, jadi fokus keyboard ikut menggulir
+          nav-nya. Kontainer nav sendiri tidak diberi tabIndex: focus ring
+          persegi selebar nav terbaca seperti kotak error. Batang tipis muncul
+          kembali saat kursor di atas nav supaya posisi gulir tetap terbaca.
+        */}
+        <nav
+          className="no-scrollbar -mx-1 min-h-0 flex-1 overflow-y-auto px-3 pb-4"
+          aria-label="Menu utama"
+        >
           {navGroups.map((group) => {
             const items = group.items.filter((item) => permissions.includes(item.permission))
             if (items.length === 0) return null
             return (
               <div key={group.label}>
-                <p className="px-3 pb-1 text-xs font-semibold tracking-wide text-slate-400 uppercase">
+                <p className="px-2.5 pt-4 pb-1 text-[11px] font-medium tracking-wide text-faint uppercase">
                   {group.label}
                 </p>
-                <ul className="space-y-1">
+                <ul>
                   {items.map(({ label, to, icon: Icon }) => (
                     <li key={to}>
                       <NavLink
                         to={to}
-                        onClick={() => setOpen(false)}
+                        onClick={onClose}
                         className={({ isActive }) =>
                           cn(
-                            'flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium',
+                            'group relative flex min-h-11 items-center gap-2.5 rounded-control px-2.5 text-sm transition-colors',
                             isActive
-                              ? 'bg-brand-50 text-brand-700 dark:bg-brand-700/20 dark:text-brand-100'
-                              : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800',
+                              ? 'bg-active font-medium text-ink'
+                              : 'text-muted hover:bg-raised hover:text-ink',
                           )
                         }
                       >
-                        <Icon className="size-4 shrink-0" />
-                        {label}
+                        {({ isActive }) => (
+                          <>
+                            {/* Penanda aktif: garis brand tipis, bukan sekadar latar. */}
+                            <span
+                              aria-hidden="true"
+                              className={cn(
+                                'absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-full bg-brand-600 transition-opacity',
+                                isActive ? 'opacity-100' : 'opacity-0',
+                              )}
+                            />
+                            <Icon
+                              className="size-4 shrink-0"
+                              strokeWidth={isActive ? 2 : 1.5}
+                            />
+                            <span className="truncate">{label}</span>
+                          </>
+                        )}
                       </NavLink>
                     </li>
                   ))}
@@ -92,19 +118,27 @@ export function Sidebar() {
           })}
         </nav>
 
-        <div className="border-t border-slate-200 p-3 dark:border-slate-800">
-          <p className="truncate px-3 text-sm font-medium">{user?.full_name ?? '-'}</p>
-          <p className="truncate px-3 pb-2 text-xs text-slate-500">
-            {user?.roles.join(', ') || 'Tanpa role'}
-          </p>
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            <LogOut className="size-4" />
-            Keluar
-          </button>
+        <div className="border-t border-line px-2 py-2">
+          <div className="flex items-center gap-2.5 rounded-control px-2 py-1.5">
+            <span className="grid size-7 shrink-0 place-items-center rounded-full bg-raised text-[11px] font-semibold text-muted uppercase">
+              {user?.full_name?.slice(0, 1) ?? '?'}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] leading-tight font-medium">{user?.full_name ?? '-'}</p>
+              <p className="truncate text-[11px] leading-tight text-muted">
+                {user?.roles.join(', ') || 'Tanpa role'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="grid size-11 shrink-0 place-items-center rounded-control text-muted hover:bg-raised hover:text-ink"
+              aria-label="Keluar"
+              title="Keluar"
+            >
+              <LogOut className="size-4" strokeWidth={1.5} />
+            </button>
+          </div>
         </div>
       </aside>
     </>

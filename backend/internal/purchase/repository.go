@@ -138,7 +138,7 @@ func (r *Repository) PO(ctx context.Context, outletID, id string) (*PurchaseOrde
 	const q = `
 		SELECT po.id, po.code, po.supplier_id, s.name, po.status, po.order_date::text,
 		       po.expected_date::text, po.subtotal::text, po.discount_amount::text,
-		       po.total_amount::text, po.note, po.version, po.created_at
+		       po.total_amount::text, po.note, po.version, po.created_at, po.submitted_by::text
 		FROM purchase_orders po
 		JOIN suppliers s ON s.id = po.supplier_id
 		WHERE po.id = $1 AND po.outlet_id = $2`
@@ -146,7 +146,7 @@ func (r *Repository) PO(ctx context.Context, outletID, id string) (*PurchaseOrde
 	o := &PurchaseOrder{}
 	err := r.pool.QueryRow(ctx, q, id, outletID).Scan(&o.ID, &o.Code, &o.SupplierID, &o.SupplierName,
 		&o.Status, &o.OrderDate, &o.ExpectedDate, &o.Subtotal, &o.DiscountAmount,
-		&o.TotalAmount, &o.Note, &o.Version, &o.CreatedAt)
+		&o.TotalAmount, &o.Note, &o.Version, &o.CreatedAt, &o.SubmittedBy)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}

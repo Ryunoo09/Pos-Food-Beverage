@@ -18,7 +18,10 @@ type PurchaseOrder struct {
 	Note           *string     `json:"note,omitempty"`
 	Version        int         `json:"version"`
 	CreatedAt      time.Time   `json:"created_at"`
-	Items          []OrderItem `json:"items"`
+	// SubmittedBy dipakai UI untuk menyembunyikan tombol Setujui dari pengaju;
+	// backend tetap menolak self-approval bila setelan melarangnya.
+	SubmittedBy *string     `json:"submitted_by,omitempty"`
+	Items       []OrderItem `json:"items"`
 }
 
 type OrderItem struct {

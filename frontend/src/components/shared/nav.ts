@@ -8,6 +8,7 @@ import {
   CreditCard,
   LayoutDashboard,
   Package,
+  ScrollText,
   Settings,
   ShieldCheck,
   ShoppingCart,
@@ -85,6 +86,7 @@ export const navGroups: NavGroup[] = [
         permission: 'settings.view',
         icon: CreditCard,
       },
+      { label: 'Log audit', to: '/audit-logs', permission: 'audit.view', icon: ScrollText },
     ],
   },
 ]

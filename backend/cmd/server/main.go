@@ -31,6 +31,7 @@ import (
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/pos"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/purchase"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/recipe"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/report"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/settings"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/shift"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/supplier"
@@ -180,6 +181,7 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 
 	opnameHandler := opname.NewHandler(opname.NewService(opname.NewRepository(pool)))
 	mux.Handle("POST /api/v1/stock-opnames", authed(perm("stock_opname.create")(http.HandlerFunc(opnameHandler.Create))))
+	mux.Handle("GET /api/v1/stock-opnames", authed(perm("stock_opname.view")(http.HandlerFunc(opnameHandler.List))))
 	mux.Handle("GET /api/v1/stock-opnames/{id}", authed(perm("stock_opname.view")(http.HandlerFunc(opnameHandler.Get))))
 	mux.Handle("POST /api/v1/stock-opnames/{id}/start", authed(perm("stock_opname.create")(http.HandlerFunc(opnameHandler.Start))))
 	mux.Handle("PUT /api/v1/stock-opnames/{id}/items", authed(perm("stock_opname.count")(http.HandlerFunc(opnameHandler.Count))))
@@ -229,6 +231,12 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("POST /api/v1/settings/taxes", authed(perm("tax.manage")(http.HandlerFunc(settingsHandler.CreateTax))))
 	mux.Handle("POST /api/v1/settings/taxes/{id}/deactivate", authed(perm("tax.manage")(settingsHandler.SetTaxActive(false))))
 	mux.Handle("POST /api/v1/settings/taxes/{id}/activate", authed(perm("tax.manage")(settingsHandler.SetTaxActive(true))))
+	// Daftar metode dibaca kasir di layar POS, jadi cukup izin payments.view;
+	// mengubahnya tetap butuh settings.manage.
+	mux.Handle("GET /api/v1/settings/payment-methods", authed(perm("payments.view")(http.HandlerFunc(settingsHandler.ListPaymentMethods))))
+	mux.Handle("POST /api/v1/settings/payment-methods", authed(perm("settings.manage")(http.HandlerFunc(settingsHandler.CreatePaymentMethod))))
+	mux.Handle("POST /api/v1/settings/payment-methods/{id}/deactivate", authed(perm("settings.manage")(settingsHandler.SetPaymentMethodActive(false))))
+	mux.Handle("POST /api/v1/settings/payment-methods/{id}/activate", authed(perm("settings.manage")(settingsHandler.SetPaymentMethodActive(true))))
 
 	discountHandler := discount.NewHandler(discount.NewService(discount.NewRepository(pool)))
 	mux.Handle("GET /api/v1/discounts", authed(perm("orders.view")(http.HandlerFunc(discountHandler.List))))
@@ -242,6 +250,14 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("POST /api/v1/pos/calculate", authed(perm("orders.create")(http.HandlerFunc(posHandler.PreviewTotal))))
 
 	auditWriter := audit.NewWriter(pool)
+
+	reportHandler := report.NewHandler(report.NewService(report.NewRepository(pool)), auditWriter)
+	mux.Handle("GET /api/v1/reports/sales", authed(perm("reports.sales.view")(http.HandlerFunc(reportHandler.Sales))))
+	mux.Handle("GET /api/v1/reports/financial", authed(perm("reports.profit.view")(http.HandlerFunc(reportHandler.Financial))))
+	mux.Handle("GET /api/v1/reports/inventory", authed(perm("reports.inventory.view")(http.HandlerFunc(reportHandler.Inventory))))
+	mux.Handle("GET /api/v1/reports/menu-performance", authed(perm("reports.menu_performance.view")(http.HandlerFunc(reportHandler.MenuPerformance))))
+	mux.Handle("GET /api/v1/reports/shifts", authed(perm("reports.shift.view")(http.HandlerFunc(reportHandler.Shifts))))
+	mux.Handle("GET /api/v1/reports/{type}/export", authed(perm("reports.export")(http.HandlerFunc(reportHandler.Export))))
 
 	orderHandler := order.NewHandler(order.NewService(order.NewRepository(pool)))
 	mux.Handle("GET /api/v1/orders", authed(perm("orders.view")(http.HandlerFunc(orderHandler.List))))

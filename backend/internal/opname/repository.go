@@ -23,6 +23,44 @@ func (r *Repository) Begin(ctx context.Context) (pgx.Tx, error) {
 	return r.pool.Begin(ctx)
 }
 
+// List mengembalikan sesi opname per outlet, terbaru lebih dulu, tanpa item.
+func (r *Repository) List(ctx context.Context, outletID, status string, page, perPage int) ([]Opname, int, error) {
+	const q = `
+		SELECT o.id, o.code, o.status, o.scope, o.note, o.rejected_reason,
+		       o.started_at, o.submitted_at, o.approved_at, o.created_at,
+		       (SELECT count(*) FROM stock_opname_items soi WHERE soi.stock_opname_id = o.id)::int,
+		       (SELECT count(*) FROM stock_opname_items soi
+		         WHERE soi.stock_opname_id = o.id AND soi.counted_quantity IS NOT NULL)::int,
+		       count(*) OVER ()::int
+		FROM stock_opnames o
+		WHERE o.outlet_id = $1 AND ($2 = '' OR o.status = $2)
+		ORDER BY o.created_at DESC
+		LIMIT $3 OFFSET $4`
+
+	rows, err := r.pool.Query(ctx, q, outletID, status, perPage, (page-1)*perPage)
+	if err != nil {
+		return nil, 0, fmt.Errorf("listOpnames: %w", err)
+	}
+	defer rows.Close()
+
+	items := []Opname{}
+	total := 0
+	for rows.Next() {
+		var o Opname
+		if err := rows.Scan(&o.ID, &o.Code, &o.Status, &o.Scope, &o.Note, &o.RejectReason,
+			&o.StartedAt, &o.SubmittedAt, &o.ApprovedAt, &o.CreatedAt,
+			&o.TotalItems, &o.CountedItems, &total); err != nil {
+			return nil, 0, fmt.Errorf("listOpnames: scan: %w", err)
+		}
+		o.Items = []Item{}
+		items = append(items, o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("listOpnames: rows: %w", err)
+	}
+	return items, total, nil
+}
+
 // NextSequence menaikkan counter dokumen per outlet dan periode secara atomik.
 // Nomor boleh melompat saat rollback, tetapi tidak pernah ganda.
 func (r *Repository) NextSequence(ctx context.Context, tx pgx.Tx, outletID, docType, period string) (int, error) {
@@ -117,12 +155,14 @@ func (r *Repository) CountItem(ctx context.Context, tx pgx.Tx, opnameID, ingredi
 // Opname mengambil sesi beserta itemnya.
 func (r *Repository) Opname(ctx context.Context, outletID, id string) (*Opname, error) {
 	const q = `
-		SELECT id, code, status, scope, note, rejected_reason, started_at, submitted_at, approved_at, created_at
+		SELECT id, code, status, scope, note, rejected_reason, submitted_by::text,
+		       started_at, submitted_at, approved_at, created_at
 		FROM stock_opnames WHERE id = $1 AND outlet_id = $2`
 
 	o := &Opname{}
 	err := r.pool.QueryRow(ctx, q, id, outletID).Scan(&o.ID, &o.Code, &o.Status, &o.Scope,
-		&o.Note, &o.RejectReason, &o.StartedAt, &o.SubmittedAt, &o.ApprovedAt, &o.CreatedAt)
+		&o.Note, &o.RejectReason, &o.SubmittedBy,
+		&o.StartedAt, &o.SubmittedAt, &o.ApprovedAt, &o.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}

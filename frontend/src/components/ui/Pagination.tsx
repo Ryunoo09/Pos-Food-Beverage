@@ -12,7 +12,7 @@ export function Pagination({ page, totalPages, total, onPageChange }: Pagination
 
   return (
     <nav className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm" aria-label="Paginasi">
-      <span className="text-slate-500">
+      <span className="text-muted">
         Halaman {page} dari {totalPages} · {total} data
       </span>
       <div className="flex gap-2">
@@ -20,7 +20,7 @@ export function Pagination({ page, totalPages, total, onPageChange }: Pagination
           type="button"
           onClick={() => onPageChange(page - 1)}
           disabled={page <= 1}
-          className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-slate-300 px-3 font-medium disabled:opacity-40 dark:border-slate-700"
+          className="inline-flex min-h-11 items-center gap-1 rounded-control border border-control px-3 font-medium disabled:opacity-40 "
         >
           <ChevronLeft className="size-4" /> Sebelumnya
         </button>
@@ -28,7 +28,7 @@ export function Pagination({ page, totalPages, total, onPageChange }: Pagination
           type="button"
           onClick={() => onPageChange(page + 1)}
           disabled={page >= totalPages}
-          className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-slate-300 px-3 font-medium disabled:opacity-40 dark:border-slate-700"
+          className="inline-flex min-h-11 items-center gap-1 rounded-control border border-control px-3 font-medium disabled:opacity-40 "
         >
           Berikutnya <ChevronRight className="size-4" />
         </button>

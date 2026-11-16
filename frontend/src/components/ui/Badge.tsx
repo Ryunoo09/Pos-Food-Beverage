@@ -4,18 +4,18 @@ import { cn } from '../../utils/cn'
 type Tone = 'green' | 'yellow' | 'red' | 'gray' | 'blue'
 
 const TONES: Record<Tone, string> = {
-  green: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200',
-  yellow: 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100',
-  red: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200',
-  gray: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
-  blue: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200',
+  green: 'bg-pill-positive text-pill-positive-ink',
+  yellow: 'bg-pill-warning text-pill-warning-ink',
+  red: 'bg-pill-negative text-pill-negative-ink',
+  gray: 'bg-pill-neutral text-pill-neutral-ink',
+  blue: 'bg-pill-info text-pill-info-ink',
 }
 
 export function Badge({ tone = 'gray', children }: { tone?: Tone; children: ReactNode }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap',
+        'inline-flex flex-none items-center rounded-chip px-2 py-0.5 text-[11px] font-medium whitespace-nowrap',
         TONES[tone],
       )}
     >

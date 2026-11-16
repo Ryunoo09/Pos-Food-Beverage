@@ -26,6 +26,9 @@ type MethodTotal struct {
 type HourPoint struct {
 	Hour  int    `json:"hour"`
 	Sales string `json:"sales"`
+	// Transactions dipakai grafik "Pesanan per jam": tanpa angka ini klien
+	// hanya punya nominal dan tidak bisa menggambar jumlah pesanan.
+	Transactions int `json:"transactions"`
 }
 
 type ProductTotal struct {

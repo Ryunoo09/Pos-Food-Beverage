@@ -30,12 +30,12 @@ export function NumberInput({
   return (
     <div className="w-full">
       {label && (
-        <label htmlFor={id} className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">
+        <label htmlFor={id} className="mb-1 block text-sm font-medium text-ink ">
           {label}
         </label>
       )}
       <div className="relative">
-        <span className="absolute inset-y-0 left-0 grid w-11 place-items-center text-sm text-slate-500">
+        <span className="absolute inset-y-0 left-0 grid w-11 place-items-center text-sm text-muted">
           Rp
         </span>
         <input
@@ -49,19 +49,19 @@ export function NumberInput({
           aria-describedby={describedBy}
           onChange={(event) => onValueChange(event.target.value.replace(/\D/g, '').slice(0, 14))}
           className={cn(
-            'h-11 w-full rounded-lg border bg-white pr-3 pl-11 text-right text-slate-900 tabular-nums outline-none focus:ring-2 dark:bg-slate-900 dark:text-slate-100',
+            'h-11 w-full rounded-control border bg-surface pr-3 pl-11 text-right text-ink tabular-nums outline-none focus:ring-2  ',
             error
-              ? 'border-red-500 focus:border-red-500 focus:ring-red-500/30'
-              : 'border-slate-300 focus:border-brand-500 focus:ring-brand-500/30 dark:border-slate-700',
+              ? 'border-negative focus:border-negative focus:ring-negative/20'
+              : 'border-control focus:border-brand-600 focus:ring-brand-600/20 ',
           )}
         />
       </div>
       {error ? (
-        <p id={`${id}-error`} className="mt-1 text-sm text-red-600">
+        <p id={`${id}-error`} className="mt-1 text-sm text-negative">
           {error}
         </p>
       ) : helper ? (
-        <p id={`${id}-helper`} className="mt-1 text-sm text-slate-500">
+        <p id={`${id}-helper`} className="mt-1 text-sm text-muted">
           {helper}
         </p>
       ) : null}

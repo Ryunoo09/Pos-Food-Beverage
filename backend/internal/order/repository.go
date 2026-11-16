@@ -17,6 +17,10 @@ import (
 
 var ErrNotFound = errors.New("pesanan tidak ditemukan")
 
+// ErrNotDraft muncul saat operasi tulis kalah balapan dengan confirm: baris
+// pesanan sudah bukan DRAFT ketika INSERT/UPDATE dijalankan.
+var ErrNotDraft = errors.New("pesanan sudah dikonfirmasi")
+
 type Repository struct {
 	pool *pgxpool.Pool
 }
@@ -98,7 +102,17 @@ func (r *Repository) CreateDraft(ctx context.Context, outletID, userID string, i
 }
 
 func (r *Repository) Order(ctx context.Context, outletID, id string) (*Order, error) {
-	const q = `
+	return orderQuery(ctx, r.pool, outletID, id)
+}
+
+// OrderTx membaca pesanan beserta itemnya lewat transaksi pemanggil, sehingga
+// datanya konsisten dengan apa yang sudah dikunci di transaksi itu.
+func (r *Repository) OrderTx(ctx context.Context, q querier, outletID, id string) (*Order, error) {
+	return orderQuery(ctx, q, outletID, id)
+}
+
+func orderQuery(ctx context.Context, q querier, outletID, id string) (*Order, error) {
+	const query = `
 		SELECT id, order_no, queue_no, service_type, status, payment_status, payment_timing,
 		       table_id, customer_name, customer_phone, delivery_address, note, priority,
 		       subtotal_amount::text, item_discount_amount::text, order_discount_amount::text,
@@ -109,7 +123,7 @@ func (r *Repository) Order(ctx context.Context, outletID, id string) (*Order, er
 
 	o := &Order{}
 	var snapshot []byte
-	err := r.pool.QueryRow(ctx, q, id, outletID).Scan(&o.ID, &o.OrderNo, &o.QueueNo,
+	err := q.QueryRow(ctx, query, id, outletID).Scan(&o.ID, &o.OrderNo, &o.QueueNo,
 		&o.ServiceType, &o.Status, &o.PaymentStatus, &o.PaymentTiming, &o.TableID,
 		&o.CustomerName, &o.CustomerPhone, &o.DelivAddress, &o.Note, &o.Priority,
 		&o.SubtotalAmount, &o.ItemDiscount,
@@ -126,7 +140,7 @@ func (r *Repository) Order(ctx context.Context, outletID, id string) (*Order, er
 		return nil, fmt.Errorf("order: pricing snapshot: %w", err)
 	}
 
-	items, err := r.items(ctx, id)
+	items, err := itemsQuery(ctx, q, id)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +149,11 @@ func (r *Repository) Order(ctx context.Context, outletID, id string) (*Order, er
 }
 
 func (r *Repository) items(ctx context.Context, orderID string) ([]OrderItem, error) {
-	const q = `
+	return itemsQuery(ctx, r.pool, orderID)
+}
+
+func itemsQuery(ctx context.Context, q querier, orderID string) ([]OrderItem, error) {
+	const query = `
 		SELECT id, round_no, product_id, variant_id, product_name_snapshot,
 		       variant_name_snapshot, sku_snapshot, quantity, unit_price::text,
 		       modifiers_total::text, discount_amount::text, line_total::text,
@@ -144,7 +162,7 @@ func (r *Repository) items(ctx context.Context, orderID string) ([]OrderItem, er
 		WHERE order_id = $1
 		ORDER BY created_at`
 
-	rows, err := r.pool.Query(ctx, q, orderID)
+	rows, err := q.Query(ctx, query, orderID)
 	if err != nil {
 		return nil, fmt.Errorf("orderItems: %w", err)
 	}
@@ -179,7 +197,7 @@ func (r *Repository) items(ctx context.Context, orderID string) ([]OrderItem, er
 		WHERE order_item_id = ANY($1::uuid[])
 		ORDER BY option_name_snapshot`
 
-	mrows, err := r.pool.Query(ctx, mq, ids)
+	mrows, err := q.Query(ctx, mq, ids)
 	if err != nil {
 		return nil, fmt.Errorf("orderItemModifiers: %w", err)
 	}
@@ -269,12 +287,36 @@ func (r *Repository) ModifierOptions(ctx context.Context, businessID string, ids
 	return choices, rows.Err()
 }
 
+// lockOrderDraft mengunci baris pesanan dan memastikan statusnya masih DRAFT.
+// Semua operasi yang mengubah isi draft memakainya supaya tidak berlomba dengan
+// confirm: confirm memegang FOR UPDATE selama memotong stok, jadi operasi ini
+// menunggu lalu membaca status terbaru, bukan DRAFT yang sudah basi.
+func lockOrderDraft(ctx context.Context, tx pgx.Tx, orderID string) error {
+	var status string
+	err := tx.QueryRow(ctx,
+		`SELECT status FROM orders WHERE id = $1 FOR UPDATE`, orderID).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lockOrderDraft: %w", err)
+	}
+	if status != "DRAFT" {
+		return ErrNotDraft
+	}
+	return nil
+}
+
 func (r *Repository) AddItem(ctx context.Context, orderID string, sv saleVariant, in ItemInput, choices []modifierChoice, modifiersTotal, lineTotal string) (string, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return "", fmt.Errorf("addItem: begin: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	if err := lockOrderDraft(ctx, tx, orderID); err != nil {
+		return "", err
+	}
 
 	const q = `
 		INSERT INTO order_items (order_id, product_id, variant_id, product_name_snapshot,
@@ -307,6 +349,16 @@ func (r *Repository) AddItem(ctx context.Context, orderID string, sv saleVariant
 }
 
 func (r *Repository) UpdateItemQuantity(ctx context.Context, orderID, itemID string, quantity int, note *string) (bool, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("updateItemQuantity: begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if err := lockOrderDraft(ctx, tx, orderID); err != nil {
+		return false, err
+	}
+
 	const q = `
 		UPDATE order_items oi
 		SET quantity = $3::int,
@@ -318,17 +370,29 @@ func (r *Repository) UpdateItemQuantity(ctx context.Context, orderID, itemID str
 		RETURNING oi.id`
 
 	var id string
-	err := r.pool.QueryRow(ctx, q, itemID, orderID, quantity, note).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
+	if err := tx.QueryRow(ctx, q, itemID, orderID, quantity, note).Scan(&id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
 		return false, fmt.Errorf("updateItemQuantity: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("updateItemQuantity: commit: %w", err)
 	}
 	return true, nil
 }
 
 func (r *Repository) UpdateItemNote(ctx context.Context, orderID, itemID string, note *string) (bool, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("updateItemNote: begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if err := lockOrderDraft(ctx, tx, orderID); err != nil {
+		return false, err
+	}
+
 	const q = `
 		UPDATE order_items oi
 		SET note = $3::text, updated_at = now()
@@ -337,39 +401,71 @@ func (r *Repository) UpdateItemNote(ctx context.Context, orderID, itemID string,
 		RETURNING oi.id`
 
 	var id string
-	err := r.pool.QueryRow(ctx, q, itemID, orderID, note).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
+	if err := tx.QueryRow(ctx, q, itemID, orderID, note).Scan(&id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
 		return false, fmt.Errorf("updateItemNote: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("updateItemNote: commit: %w", err)
 	}
 	return true, nil
 }
 
 func (r *Repository) DeleteItem(ctx context.Context, orderID, itemID string) (bool, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("deleteItem: begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if err := lockOrderDraft(ctx, tx, orderID); err != nil {
+		return false, err
+	}
+
+	// Guard status tetap ada sebagai pengaman kedua; kunci di atas yang
+	// menyerialkan penghapusan dengan confirm.
 	const q = `
 		DELETE FROM order_items oi
 		USING orders o
 		WHERE oi.id = $1 AND o.id = oi.order_id AND o.id = $2 AND o.status = 'DRAFT'`
 
-	tag, err := r.pool.Exec(ctx, q, itemID, orderID)
+	tag, err := tx.Exec(ctx, q, itemID, orderID)
 	if err != nil {
 		return false, fmt.Errorf("deleteItem: %w", err)
 	}
-	return tag.RowsAffected() > 0, nil
+	if tag.RowsAffected() == 0 {
+		return false, nil
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("deleteItem: commit: %w", err)
+	}
+	return true, nil
 }
 
 // SaveTotals menyimpan hasil kalkulasi server-side ke pesanan draft.
+// Guard status wajib: recalc berjalan setelah operasi draft, dan confirm bisa
+// menang balapan di antara keduanya. Tanpa guard ini total pesanan yang sudah
+// CONFIRMED (dan sudah dibayar) bisa tertimpa nilai baru.
 func (r *Repository) SaveTotals(ctx context.Context, orderID string, t orderTotals) error {
-	const q = `
+	return saveTotalsQuery(ctx, r.pool, orderID, t)
+}
+
+// SaveTotalsTx menulis total lewat transaksi pemanggil (dipakai confirm).
+func (r *Repository) SaveTotalsTx(ctx context.Context, q querier, orderID string, t orderTotals) error {
+	return saveTotalsQuery(ctx, q, orderID, t)
+}
+
+func saveTotalsQuery(ctx context.Context, q querier, orderID string, t orderTotals) error {
+	const query = `
 		UPDATE orders
 		SET subtotal_amount = $2, item_discount_amount = $3, order_discount_amount = $4,
 		    service_charge_amount = $5, tax_amount = $6, rounding_amount = $7,
 		    total_amount = $8, updated_at = now()
-		WHERE id = $1`
+		WHERE id = $1 AND status = 'DRAFT'`
 
-	if _, err := r.pool.Exec(ctx, q, orderID, t.Subtotal, t.ItemDiscount, t.OrderDiscount,
+	if _, err := q.Exec(ctx, query, orderID, t.Subtotal, t.ItemDiscount, t.OrderDiscount,
 		t.Service, t.Tax, t.Rounding, t.Total); err != nil {
 		return fmt.Errorf("saveTotals: %w", err)
 	}
@@ -389,6 +485,7 @@ type orderTotals struct {
 // querier adalah subset pgxpool.Pool atau pgx.Tx yang dipakai helper repository.
 type querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
 

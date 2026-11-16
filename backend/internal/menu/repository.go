@@ -176,7 +176,23 @@ func (r *Repository) Product(ctx context.Context, businessID, id string) (*Produ
 		return nil, err
 	}
 	p.Variants = variants
-	return p, nil
+
+	rows, err := r.pool.Query(ctx,
+		`SELECT modifier_group_id FROM product_modifier_groups
+		 WHERE product_id = $1 ORDER BY sort_order`, id)
+	if err != nil {
+		return nil, fmt.Errorf("product modifier groups: %w", err)
+	}
+	defer rows.Close()
+	p.ModifierGroupIDs = []string{}
+	for rows.Next() {
+		var groupID string
+		if err := rows.Scan(&groupID); err != nil {
+			return nil, fmt.Errorf("scan product modifier group: %w", err)
+		}
+		p.ModifierGroupIDs = append(p.ModifierGroupIDs, groupID)
+	}
+	return p, rows.Err()
 }
 
 func (r *Repository) variants(ctx context.Context, productID string) ([]Variant, error) {

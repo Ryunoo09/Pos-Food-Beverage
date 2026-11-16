@@ -33,6 +33,8 @@ type Product struct {
 	SortOrder       int       `json:"sort_order"`
 	Price           string    `json:"price"`
 	Variants        []Variant `json:"variants,omitempty"`
+	// ModifierGroupIDs hanya diisi pada detail produk, dipakai tab modifier.
+	ModifierGroupIDs []string `json:"modifier_group_ids,omitempty"`
 }
 
 type Variant struct {

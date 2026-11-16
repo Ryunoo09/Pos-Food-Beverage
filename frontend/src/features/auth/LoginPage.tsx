@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { z } from 'zod'
 import { authApi } from '../../api/auth'
+import { ProductMark } from '../../components/shared/ProductMark'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { useAuthStore } from '../../store/auth'
@@ -46,52 +47,60 @@ export function LoginPage() {
   }
 
   return (
-    <main className="grid min-h-dvh place-items-center bg-slate-100 p-4 dark:bg-slate-950">
-      <form
-        className="w-full max-w-sm rounded-xl bg-white p-6 shadow dark:bg-slate-900"
-        onSubmit={handleSubmit(onSubmit)}
-        noValidate
-      >
-        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Masuk</h1>
-        <p className="mt-1 text-sm text-slate-500">Food POS UMKM</p>
-
-        <div className="mt-6 space-y-4">
-          <Input
-            label="Username"
-            autoComplete="username"
-            autoFocus
-            error={errors.username?.message}
-            {...register('username')}
-          />
-          <Input
-            label="Password"
-            type={showPassword ? 'text' : 'password'}
-            autoComplete="current-password"
-            error={errors.password?.message}
-            trailing={
-              <button
-                type="button"
-                onClick={() => setShowPassword((value) => !value)}
-                aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
-                className="grid size-11 place-items-center text-slate-500"
-              >
-                {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-              </button>
-            }
-            {...register('password')}
-          />
+    <main className="grid min-h-dvh place-items-center bg-ground p-4">
+      <div className="w-full max-w-[400px] rounded-sheet border border-line bg-surface p-8">
+        <div className="flex items-center gap-2.5">
+          <ProductMark className="size-6 text-brand-600" />
+          <span className="text-sm font-semibold">Food POS</span>
+          <span className="text-[11px] text-muted">UMKM</span>
         </div>
 
-        {formError && (
-          <p role="alert" className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-            {formError}
-          </p>
-        )}
+        <h1 className="mt-8 text-[22px] leading-tight font-semibold tracking-[-0.01em]">Masuk ke kasir</h1>
+        <p className="mt-1.5 text-sm text-muted">Gunakan akun yang diberikan pemilik usaha.</p>
 
-        <Button type="submit" size="lg" className="mt-6 w-full" loading={isSubmitting}>
-          Masuk
-        </Button>
-      </form>
+        <form className="mt-6" onSubmit={handleSubmit(onSubmit)} noValidate>
+          <div className="space-y-4">
+            <Input
+              label="Username"
+              autoComplete="username"
+              autoFocus
+              error={errors.username?.message}
+              {...register('username')}
+            />
+            <Input
+              label="Password"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              error={errors.password?.message}
+              trailing={
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((value) => !value)}
+                  aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+                  className="grid size-11 place-items-center text-muted hover:text-ink"
+                >
+                  {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              }
+              {...register('password')}
+            />
+          </div>
+
+          {formError && (
+            <p role="alert" className="mt-4 rounded-control bg-pill-negative px-3 py-2 text-sm text-pill-negative-ink">
+              {formError}
+            </p>
+          )}
+
+          <Button type="submit" size="lg" className="mt-6 w-full" loading={isSubmitting}>
+            Masuk
+          </Button>
+        </form>
+
+        <p className="mt-6 border-t border-rule pt-4 text-xs text-muted">
+          Lupa password? Pemilik usaha bisa mereset dari menu Pengguna.
+        </p>
+      </div>
     </main>
   )
 }
