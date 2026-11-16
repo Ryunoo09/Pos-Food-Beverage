@@ -475,8 +475,34 @@ func (s *Service) confirm(ctx context.Context, actor auth.Actor, orderID string)
 		return nil, notFound()
 	}
 	if status != "DRAFT" {
-		return nil, httpx.NewError(http.StatusConflict, "ORDER_NOT_DRAFT",
-			"Pesanan sudah dikonfirmasi dan tidak bisa diubah.")
+		return nil, errNotDraft()
+	}
+
+	// Baca ulang pesanan lewat transaksi yang sudah memegang kunci: item di sini
+	// adalah versi final, bukan hasil baca sebelum transaksi. Tanpa langkah ini
+	// item yang dihapus sesaat sebelum confirm masih ikut terhitung, dan pesanan
+	// bisa resmi dengan item yang sudah tidak ada.
+	o, err = s.repo.OrderTx(ctx, tx, actor.OutletID, orderID)
+	if err != nil {
+		return nil, err
+	}
+	active = 0
+	for _, item := range o.Items {
+		if item.Status == "ACTIVE" {
+			active++
+		}
+	}
+	if active == 0 {
+		return nil, httpx.NewError(http.StatusUnprocessableEntity, "ORDER_EMPTY",
+			"Pesanan belum memiliki item.")
+	}
+
+	totals, err := computeTotals(o)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.SaveTotalsTx(ctx, tx, o.ID, totals); err != nil {
+		return nil, err
 	}
 
 	// Kurangi stok bahan dan hitung HPP dalam transaksi yang sama (BR-TX-1).
@@ -524,13 +550,13 @@ func (s *Service) confirm(ctx context.Context, actor auth.Actor, orderID string)
 		TaxRate:         o.TaxRate,
 		ServiceRate:     o.ServiceRate,
 		TaxInclusive:    o.TaxInclusive,
-		Subtotal:        o.SubtotalAmount,
-		ItemDiscount:    o.ItemDiscount,
-		OrderDiscount:   o.OrderDiscount,
-		Service:         o.ServiceAmount,
-		Tax:             o.TaxAmount,
-		Rounding:        o.RoundingAmount,
-		Total:           o.TotalAmount,
+		Subtotal:        totals.Subtotal,
+		ItemDiscount:    totals.ItemDiscount,
+		OrderDiscount:   totals.OrderDiscount,
+		Service:         totals.Service,
+		Tax:             totals.Tax,
+		Rounding:        totals.Rounding,
+		Total:           totals.Total,
 	})
 	if err != nil {
 		return nil, err
@@ -592,8 +618,7 @@ func (s *Service) AddItem(ctx context.Context, actor auth.Actor, orderID string,
 	if _, err := s.repo.AddItem(ctx, o.ID, sv, in, choices, money.Format(modifiersTotal),
 		money.Format(lineTotal)); err != nil {
 		if errors.Is(err, ErrNotDraft) {
-			return nil, httpx.NewError(http.StatusConflict, "ORDER_NOT_DRAFT",
-				"Pesanan sudah dikonfirmasi dan tidak bisa diubah.")
+			return nil, errNotDraft()
 		}
 		return nil, err
 	}
@@ -621,6 +646,9 @@ func (s *Service) UpdateItem(ctx context.Context, actor auth.Actor, orderID, ite
 	if in.Quantity != nil {
 		ok, err := s.repo.UpdateItemQuantity(ctx, o.ID, itemID, quantity, in.Note)
 		if err != nil {
+			if errors.Is(err, ErrNotDraft) {
+				return nil, errNotDraft()
+			}
 			return nil, err
 		}
 		if !ok {
@@ -629,6 +657,9 @@ func (s *Service) UpdateItem(ctx context.Context, actor auth.Actor, orderID, ite
 	} else {
 		ok, err := s.repo.UpdateItemNote(ctx, o.ID, itemID, in.Note)
 		if err != nil {
+			if errors.Is(err, ErrNotDraft) {
+				return nil, errNotDraft()
+			}
 			return nil, err
 		}
 		if !ok {
@@ -645,6 +676,9 @@ func (s *Service) DeleteItem(ctx context.Context, actor auth.Actor, orderID, ite
 	}
 	ok, err := s.repo.DeleteItem(ctx, o.ID, itemID)
 	if err != nil {
+		if errors.Is(err, ErrNotDraft) {
+			return nil, errNotDraft()
+		}
 		return nil, err
 	}
 	if !ok {
@@ -679,6 +713,22 @@ func (s *Service) recalc(ctx context.Context, actor auth.Actor, orderID string) 
 		return nil, err
 	}
 
+	totals, err := computeTotals(o)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.repo.SaveTotals(ctx, o.ID, totals); err != nil {
+		return nil, err
+	}
+	return s.repo.Order(ctx, actor.OutletID, o.ID)
+}
+
+// computeTotals menghitung total dari item yang ada di pesanan. Dipakai recalc
+// dan confirm; confirm memanggilnya di dalam transaksi setelah baris pesanan
+// dikunci, supaya total yang disimpan selalu cocok dengan item yang benar-benar
+// ada saat konfirmasi.
+func computeTotals(o *Order) (orderTotals, error) {
 	items := make([]pos.Item, 0, len(o.Items))
 	for _, item := range o.Items {
 		if item.Status != "ACTIVE" {
@@ -686,11 +736,11 @@ func (s *Service) recalc(ctx context.Context, actor auth.Actor, orderID string) 
 		}
 		unitPrice, err := money.Parse(item.UnitPrice)
 		if err != nil {
-			return nil, err
+			return orderTotals{}, err
 		}
 		modifiers, err := money.Parse(item.ModifiersTotal)
 		if err != nil {
-			return nil, err
+			return orderTotals{}, err
 		}
 		items = append(items, pos.Item{
 			UnitPrice: money.Format(unitPrice.Add(modifiers)),
@@ -702,33 +752,30 @@ func (s *Service) recalc(ctx context.Context, actor auth.Actor, orderID string) 
 		Subtotal: "0.00", ItemDiscount: "0.00", OrderDiscount: "0.00",
 		Service: "0.00", Tax: "0.00", Rounding: "0.00", Total: "0.00",
 	}
-	if len(items) > 0 {
-		result, err := pos.Calculate(pos.Input{
-			Items:        items,
-			TaxRate:      o.TaxRate,
-			ServiceRate:  o.ServiceRate,
-			TaxInclusive: o.TaxInclusive,
-			TaxOnService: o.pricing.TaxOnService,
-			RoundingMode: o.pricing.RoundingMode,
-		})
-		if err != nil {
-			return nil, err
-		}
-		totals = orderTotals{
-			Subtotal:      result.Subtotal,
-			ItemDiscount:  result.ItemDiscount,
-			OrderDiscount: result.OrderDiscount,
-			Service:       result.Service,
-			Tax:           result.Tax,
-			Rounding:      result.RoundingAdjustment,
-			Total:         result.Total,
-		}
+	if len(items) == 0 {
+		return totals, nil
 	}
 
-	if err := s.repo.SaveTotals(ctx, o.ID, totals); err != nil {
-		return nil, err
+	result, err := pos.Calculate(pos.Input{
+		Items:        items,
+		TaxRate:      o.TaxRate,
+		ServiceRate:  o.ServiceRate,
+		TaxInclusive: o.TaxInclusive,
+		TaxOnService: o.pricing.TaxOnService,
+		RoundingMode: o.pricing.RoundingMode,
+	})
+	if err != nil {
+		return orderTotals{}, err
 	}
-	return s.repo.Order(ctx, actor.OutletID, o.ID)
+	return orderTotals{
+		Subtotal:      result.Subtotal,
+		ItemDiscount:  result.ItemDiscount,
+		OrderDiscount: result.OrderDiscount,
+		Service:       result.Service,
+		Tax:           result.Tax,
+		Rounding:      result.RoundingAdjustment,
+		Total:         result.Total,
+	}, nil
 }
 
 func validServiceType(v string) bool {
@@ -812,6 +859,12 @@ func notFound() error {
 
 func itemNotFound() error {
 	return httpx.NewError(http.StatusNotFound, "ORDER_ITEM_NOT_FOUND", "Item pesanan tidak ditemukan.")
+}
+
+// errNotDraft dipakai semua operasi tulis yang hanya boleh jalan pada draft.
+func errNotDraft() error {
+	return httpx.NewError(http.StatusConflict, "ORDER_NOT_DRAFT",
+		"Pesanan sudah dikonfirmasi dan tidak bisa diubah.")
 }
 
 func outletMissing() error {
