@@ -53,3 +53,38 @@ export function orderStatusLabel(status: string): string {
 export function paymentStatusLabel(status: string): string {
   return PAYMENT_LABELS[status] ?? status
 }
+
+const OPNAME_TONES: Record<string, StatusTone> = {
+  DRAFT: 'gray',
+  IN_PROGRESS: 'yellow',
+  SUBMITTED: 'blue',
+  APPROVED: 'green',
+  REJECTED: 'red',
+  CANCELLED: 'gray',
+}
+
+const PO_TONES: Record<string, StatusTone> = {
+  DRAFT: 'gray',
+  SUBMITTED: 'blue',
+  APPROVED: 'blue',
+  PARTIALLY_RECEIVED: 'yellow',
+  RECEIVED: 'green',
+  CANCELLED: 'red',
+}
+
+const WASTE_TONES: Record<string, StatusTone> = {
+  POSTED: 'yellow',
+  REVERSED: 'gray',
+}
+
+export function opnameStatusTone(status: string): StatusTone {
+  return OPNAME_TONES[status] ?? 'gray'
+}
+
+export function purchaseStatusTone(status: string): StatusTone {
+  return PO_TONES[status] ?? 'gray'
+}
+
+export function wasteStatusTone(status: string): StatusTone {
+  return WASTE_TONES[status] ?? 'gray'
+}

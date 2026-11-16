@@ -180,6 +180,7 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 
 	opnameHandler := opname.NewHandler(opname.NewService(opname.NewRepository(pool)))
 	mux.Handle("POST /api/v1/stock-opnames", authed(perm("stock_opname.create")(http.HandlerFunc(opnameHandler.Create))))
+	mux.Handle("GET /api/v1/stock-opnames", authed(perm("stock_opname.view")(http.HandlerFunc(opnameHandler.List))))
 	mux.Handle("GET /api/v1/stock-opnames/{id}", authed(perm("stock_opname.view")(http.HandlerFunc(opnameHandler.Get))))
 	mux.Handle("POST /api/v1/stock-opnames/{id}/start", authed(perm("stock_opname.create")(http.HandlerFunc(opnameHandler.Start))))
 	mux.Handle("PUT /api/v1/stock-opnames/{id}/items", authed(perm("stock_opname.count")(http.HandlerFunc(opnameHandler.Count))))

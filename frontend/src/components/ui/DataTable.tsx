@@ -29,8 +29,10 @@ export function DataTable<T>({
   empty = 'Belum ada data.',
 }: DataTableProps<T>) {
   return (
+    // min-w-max membuat tabel tetap selebar isinya sehingga kolom tidak
+    // diperas; di layar sempit tabel menggeser horizontal, bukan terpotong.
     <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">
+      <table className="w-full min-w-max text-left text-sm">
         <thead className="text-xs text-muted">
           <tr>
             {columns.map((column) => (

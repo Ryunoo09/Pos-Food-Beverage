@@ -8,6 +8,11 @@ export interface SelectOption {
 
 export interface SelectProps {
   label?: string
+  /**
+   * Nama aksesibel saat label visual tidak dipakai (mis. select berulang per baris
+   * tabel). Label visual tetap menang bila ada.
+   */
+  ariaLabel?: string
   placeholder?: string
   value: string
   onValueChange: (value: string) => void
@@ -17,6 +22,7 @@ export interface SelectProps {
 
 export function Select({
   label,
+  ariaLabel,
   placeholder = 'Pilih',
   value,
   onValueChange,
@@ -29,7 +35,7 @@ export function Select({
       <RadixSelect.Root value={value} onValueChange={onValueChange} disabled={disabled}>
         <RadixSelect.Trigger
           className="flex h-11 w-full items-center justify-between rounded-control border border-control bg-surface px-3 text-sm text-ink outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/20 disabled:opacity-50   "
-          aria-label={label ?? placeholder}
+          aria-label={label ?? ariaLabel ?? placeholder}
         >
           <RadixSelect.Value placeholder={placeholder} />
           <RadixSelect.Icon>

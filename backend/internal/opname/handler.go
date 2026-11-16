@@ -2,6 +2,7 @@ package opname
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/auth"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/httpx"
@@ -13,6 +14,18 @@ type Handler struct {
 
 func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
+}
+
+func pagination(r *http.Request) (page, perPage int) {
+	page, _ = strconv.Atoi(r.URL.Query().Get("page"))
+	perPage, _ = strconv.Atoi(r.URL.Query().Get("per_page"))
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 || perPage > 100 {
+		perPage = 20
+	}
+	return page, perPage
 }
 
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
@@ -31,6 +44,25 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteData(w, http.StatusCreated, o, requestID)
+}
+
+func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
+	actor, _ := auth.ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	page, perPage := pagination(r)
+	items, total, err := h.svc.List(r.Context(), actor, r.URL.Query().Get("status"), page, perPage)
+	if err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	httpx.WritePage(w, items, httpx.PageMeta{
+		Page:       page,
+		PerPage:    perPage,
+		Total:      total,
+		TotalPages: (total + perPage - 1) / perPage,
+		RequestID:  requestID,
+	})
 }
 
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {

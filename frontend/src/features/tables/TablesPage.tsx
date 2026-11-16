@@ -155,7 +155,7 @@ export function TablesPage() {
         </div>
         <div className="w-full sm:w-52">
           <Select
-            aria-label="Filter area"
+            ariaLabel="Filter area"
             value={area}
             onValueChange={setArea}
             options={[
@@ -352,7 +352,7 @@ function TableCard({
         <div className="mt-2 flex items-center gap-1 border-t border-ink/10 pt-2">
           <div className="min-w-0 flex-1">
             <Select
-              aria-label={`Status meja ${table.number}`}
+              ariaLabel={`Status meja ${table.number}`}
               value={table.status}
               onValueChange={(value) => onStatus(value as TableStatus)}
               disabled={busy}

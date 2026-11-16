@@ -9,18 +9,25 @@ import { DashboardPage } from './features/dashboard/DashboardPage'
 import { ForbiddenPage, NotFoundPage } from './features/errors/ErrorPages'
 import { IngredientDetailPage } from './features/inventory/IngredientDetailPage'
 import { IngredientsPage } from './features/inventory/IngredientsPage'
+import { InventoryPage } from './features/inventory/InventoryPage'
+import { OpnameDetailPage } from './features/inventory/OpnameDetailPage'
+import { OpnamePage } from './features/inventory/OpnamePage'
 import { KitchenPage } from './features/kitchen/KitchenPage'
 import { CategoriesPage } from './features/menu/CategoriesPage'
 import { MenuListPage } from './features/menu/MenuListPage'
 import { ProductDetailPage } from './features/menu/ProductDetailPage'
+import { RecipePage } from './features/menu/RecipePage'
 import { OrderDetailPage } from './features/orders/OrderDetailPage'
 import { OrdersPage } from './features/orders/OrdersPage'
 import { PosPage } from './features/pos/PosPage'
+import { PurchaseDetailPage } from './features/purchases/PurchaseDetailPage'
+import { PurchasePage } from './features/purchases/PurchasePage'
 import { PlaceholderPage } from './features/shared/PlaceholderPage'
 import { ShiftDetailPage } from './features/shifts/ShiftDetailPage'
 import { ShiftsPage } from './features/shifts/ShiftsPage'
 import { SuppliersPage } from './features/suppliers/SuppliersPage'
 import { TablesPage } from './features/tables/TablesPage'
+import { WastePage } from './features/waste/WastePage'
 
 function page(title: string, permission: string, description?: string) {
   return (
@@ -93,14 +100,63 @@ export const router = createBrowserRouter([
           { path: '/menu/:id', element: <ProductDetailPage /> },
           { path: '/ingredients', element: <IngredientsPage /> },
           { path: '/ingredients/:id', element: <IngredientDetailPage /> },
-          { path: '/recipes/:variantId', element: page('Resep', 'recipes.view') },
-          { path: '/inventory', element: page('Stok', 'inventory.view') },
-          { path: '/inventory/opname', element: page('Stock Opname', 'stock_opname.view') },
-          { path: '/inventory/opname/:id', element: page('Detail Opname', 'stock_opname.view') },
-          { path: '/purchase', element: page('Pembelian', 'purchases.view') },
-          { path: '/purchase/:id', element: page('Detail Pembelian', 'purchases.view') },
+          {
+            path: '/recipes/:variantId',
+            element: (
+              <PermissionGate perm="recipes.view" redirect="/403">
+                <RecipePage />
+              </PermissionGate>
+            ),
+          },
+          {
+            path: '/inventory',
+            element: (
+              <PermissionGate perm="inventory.view" redirect="/403">
+                <InventoryPage />
+              </PermissionGate>
+            ),
+          },
+          {
+            path: '/inventory/opname',
+            element: (
+              <PermissionGate perm="stock_opname.view" redirect="/403">
+                <OpnamePage />
+              </PermissionGate>
+            ),
+          },
+          {
+            path: '/inventory/opname/:id',
+            element: (
+              <PermissionGate perm="stock_opname.view" redirect="/403">
+                <OpnameDetailPage />
+              </PermissionGate>
+            ),
+          },
+          {
+            path: '/purchase',
+            element: (
+              <PermissionGate perm="purchases.view" redirect="/403">
+                <PurchasePage />
+              </PermissionGate>
+            ),
+          },
+          {
+            path: '/purchase/:id',
+            element: (
+              <PermissionGate perm="purchases.view" redirect="/403">
+                <PurchaseDetailPage />
+              </PermissionGate>
+            ),
+          },
           { path: '/suppliers', element: <SuppliersPage /> },
-          { path: '/waste', element: page('Waste', 'waste.view') },
+          {
+            path: '/waste',
+            element: (
+              <PermissionGate perm="waste.view" redirect="/403">
+                <WastePage />
+              </PermissionGate>
+            ),
+          },
           {
             path: '/shifts',
             element: (

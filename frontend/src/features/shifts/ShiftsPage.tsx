@@ -172,7 +172,7 @@ export function ShiftsPage() {
       <div className="mt-6 flex justify-end">
         <div className="w-full sm:w-52">
           <Select
-            aria-label="Filter status shift"
+            ariaLabel="Filter status shift"
             value={status || 'all'}
             onValueChange={(value) => patchParams({ status: value === 'all' ? '' : value })}
             options={[

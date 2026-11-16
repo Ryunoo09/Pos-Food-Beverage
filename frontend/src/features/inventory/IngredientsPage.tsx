@@ -144,7 +144,7 @@ export function IngredientsPage() {
         </form>
         <div className="w-full sm:w-44">
           <Select
-            aria-label="Filter status bahan"
+            ariaLabel="Filter status bahan"
             value={active || 'all'}
             onValueChange={(value) => patchParams({ is_active: value === 'all' ? '' : value })}
             options={[

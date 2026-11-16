@@ -85,6 +85,13 @@ func (s *Service) Create(ctx context.Context, actor auth.Actor, in CreateInput) 
 	return s.repo.Opname(ctx, actor.OutletID, id)
 }
 
+func (s *Service) List(ctx context.Context, actor auth.Actor, status string, page, perPage int) ([]Opname, int, error) {
+	if actor.OutletID == "" {
+		return nil, 0, outletMissing()
+	}
+	return s.repo.List(ctx, actor.OutletID, strings.ToUpper(strings.TrimSpace(status)), page, perPage)
+}
+
 func (s *Service) Get(ctx context.Context, actor auth.Actor, id string) (*Opname, error) {
 	if actor.OutletID == "" {
 		return nil, outletMissing()

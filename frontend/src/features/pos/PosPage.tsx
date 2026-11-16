@@ -310,7 +310,7 @@ export function PosPage() {
         {serviceType === 'DINE_IN' ? (
           <div className="w-full sm:w-64">
             <Select
-              aria-label="Pilih meja"
+              ariaLabel="Pilih meja"
               placeholder="Pilih meja"
               value={tableID}
               onValueChange={setTableID}

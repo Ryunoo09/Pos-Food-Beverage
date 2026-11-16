@@ -138,7 +138,7 @@ export function OrdersPage() {
         </form>
         <div className="w-full sm:w-52">
           <Select
-            aria-label="Filter status"
+            ariaLabel="Filter status"
             value={status || 'all'}
             onValueChange={(value) => patchParams({ status: value === 'all' ? '' : value })}
             options={[

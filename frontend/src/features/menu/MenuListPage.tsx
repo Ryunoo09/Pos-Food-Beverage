@@ -223,7 +223,7 @@ export function MenuListPage() {
         </form>
         <div className="w-full sm:w-56">
           <Select
-            aria-label="Filter kategori"
+            ariaLabel="Filter kategori"
             value={categoryID}
             onValueChange={(value) => patchParams({ category_id: value === 'all' ? '' : value })}
             options={[
@@ -237,7 +237,7 @@ export function MenuListPage() {
         </div>
         <div className="w-full sm:w-44">
           <Select
-            aria-label="Filter ketersediaan"
+            ariaLabel="Filter ketersediaan"
             value={availability || 'all'}
             onValueChange={(value) => patchParams({ available: value === 'all' ? '' : value })}
             options={[

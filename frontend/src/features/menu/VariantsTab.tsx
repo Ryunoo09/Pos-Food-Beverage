@@ -177,7 +177,7 @@ export function VariantsTab({ product, onChanged }: { product: Product; onChange
           action={
             <div className="w-56">
               <Select
-                aria-label="Pilih varian"
+                ariaLabel="Pilih varian"
                 value={historyVariant}
                 onValueChange={setHistoryVariant}
                 options={variants.map((variant) => ({ value: variant.id, label: variant.name }))}

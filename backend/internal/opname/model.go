@@ -11,6 +11,9 @@ type Opname struct {
 	Scope        string     `json:"scope"`
 	Note         *string    `json:"note,omitempty"`
 	RejectReason *string    `json:"rejected_reason,omitempty"`
+	// SubmittedBy dipakai UI untuk menyembunyikan tombol Setujui dari pengaju
+	// (pemisahan tugas); backend tetap menolak.
+	SubmittedBy  *string    `json:"submitted_by,omitempty"`
 	StartedAt    *time.Time `json:"started_at,omitempty"`
 	SubmittedAt  *time.Time `json:"submitted_at,omitempty"`
 	ApprovedAt   *time.Time `json:"approved_at,omitempty"`
