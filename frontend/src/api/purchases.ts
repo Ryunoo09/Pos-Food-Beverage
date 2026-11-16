@@ -48,6 +48,8 @@ export interface PurchaseOrder {
   note?: string
   version: number
   created_at: string
+  /** Pengaju PO; dipakai UI untuk menyembunyikan Setujui dari pengaju sendiri. */
+  submitted_by?: string
   items: PurchaseOrderItem[] | null
 }
 

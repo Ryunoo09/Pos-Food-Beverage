@@ -24,6 +24,7 @@ export function PurchaseDetailPage() {
   const toast = useToast()
   const queryClient = useQueryClient()
   const permissions = useAuthStore((state) => state.permissions)
+  const userID = useAuthStore((state) => state.user?.id)
 
   const [cancelOpen, setCancelOpen] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
@@ -130,7 +131,12 @@ export function PurchaseDetailPage() {
   const data = po.data
   const items = data.items ?? []
   const canSubmit = data.status === 'DRAFT' && permissions.includes('purchases.submit')
-  const canApprove = data.status === 'SUBMITTED' && permissions.includes('purchases.approve')
+  // Pemisahan tugas: pengaju tidak menyetujui PO-nya sendiri. Backend juga
+  // menolak bila setelan outlet melarang; di sini tombolnya tidak ditawarkan.
+  const canApprove =
+    data.status === 'SUBMITTED' &&
+    permissions.includes('purchases.approve') &&
+    data.submitted_by !== userID
   const canCancel =
     data.status !== 'RECEIVED' &&
     data.status !== 'CANCELLED' &&
