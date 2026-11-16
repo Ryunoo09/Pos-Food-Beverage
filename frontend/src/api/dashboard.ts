@@ -35,8 +35,15 @@ export const dashboardApi = {
 /** Label metode bayar yang dikenal; kode tak dikenal ditampilkan apa adanya. */
 export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   CASH: 'Tunai',
-  CARD: 'Kartu',
   QRIS: 'QRIS',
-  TRANSFER: 'Transfer',
-  EWALLET: 'E-wallet',
+  TRANSFER: 'Transfer bank',
+  E_WALLET: 'E-wallet',
 }
+
+/** Pilihan untuk form; dibatasi pada kode aktif yang ada di payment_methods. */
+export const PAYMENT_METHOD_OPTIONS = [
+  { value: 'CASH', label: 'Tunai' },
+  { value: 'QRIS', label: 'QRIS' },
+  { value: 'TRANSFER', label: 'Transfer bank' },
+  { value: 'E_WALLET', label: 'E-wallet' },
+] as const

@@ -7,6 +7,7 @@ import { ChangePasswordPage } from './features/auth/ChangePasswordPage'
 import { LoginPage } from './features/auth/LoginPage'
 import { DashboardPage } from './features/dashboard/DashboardPage'
 import { ForbiddenPage, NotFoundPage } from './features/errors/ErrorPages'
+import { ExpensesPage } from './features/expenses/ExpensesPage'
 import { IngredientDetailPage } from './features/inventory/IngredientDetailPage'
 import { IngredientsPage } from './features/inventory/IngredientsPage'
 import { InventoryPage } from './features/inventory/InventoryPage'
@@ -173,7 +174,14 @@ export const router = createBrowserRouter([
               </PermissionGate>
             ),
           },
-          { path: '/expenses', element: page('Pengeluaran', 'expenses.view') },
+          {
+            path: '/expenses',
+            element: (
+              <PermissionGate perm="expenses.view" redirect="/403">
+                <ExpensesPage />
+              </PermissionGate>
+            ),
+          },
           { path: '/reports', element: page('Laporan', 'reports.sales.view') },
           { path: '/reports/sales', element: page('Laporan Penjualan', 'reports.sales.view') },
           { path: '/reports/financial', element: page('Laporan Keuangan', 'reports.profit.view') },
