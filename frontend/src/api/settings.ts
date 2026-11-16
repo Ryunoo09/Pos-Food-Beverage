@@ -75,9 +75,12 @@ export const DISCOUNT_SCOPES = [
   { value: 'ITEM', label: 'Per item' },
 ] as const
 
+// Nilai yang diterima backend (settings.Service.CreateTax): DINE_IN, TAKEAWAY,
+// PICKUP, DELIVERY. Label disesuaikan dengan istilah yang dipakai di UI.
 export const SERVICE_TYPES = [
   { value: 'DINE_IN', label: 'Dine-in' },
   { value: 'TAKEAWAY', label: 'Takeaway' },
+  { value: 'PICKUP', label: 'Ambil sendiri' },
   { value: 'DELIVERY', label: 'Delivery' },
 ] as const
 

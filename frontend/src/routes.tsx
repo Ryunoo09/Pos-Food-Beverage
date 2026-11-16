@@ -24,6 +24,7 @@ import { PosPage } from './features/pos/PosPage'
 import { PurchaseDetailPage } from './features/purchases/PurchaseDetailPage'
 import { PurchasePage } from './features/purchases/PurchasePage'
 import { PlaceholderPage } from './features/shared/PlaceholderPage'
+import { TaxSettingsPage } from './features/settings/TaxSettingsPage'
 import { ShiftDetailPage } from './features/shifts/ShiftDetailPage'
 import { ShiftsPage } from './features/shifts/ShiftsPage'
 import { SuppliersPage } from './features/suppliers/SuppliersPage'
@@ -193,7 +194,14 @@ export const router = createBrowserRouter([
           { path: '/settings', element: page('Pengaturan', 'settings.view') },
           { path: '/settings/users', element: page('Pengguna', 'users.view') },
           { path: '/settings/roles', element: page('Role', 'roles.view') },
-          { path: '/settings/tax', element: page('Pajak', 'tax.manage') },
+          {
+            path: '/settings/tax',
+            element: (
+              <PermissionGate perm="settings.view" redirect="/403">
+                <TaxSettingsPage />
+              </PermissionGate>
+            ),
+          },
           { path: '/settings/payment-methods', element: page('Metode Pembayaran', 'settings.view') },
           { path: '/403', element: <ForbiddenPage /> },
           { path: '*', element: <NotFoundPage /> },
