@@ -7,7 +7,14 @@ import { ChangePasswordPage } from './features/auth/ChangePasswordPage'
 import { LoginPage } from './features/auth/LoginPage'
 import { DashboardPage } from './features/dashboard/DashboardPage'
 import { ForbiddenPage, NotFoundPage } from './features/errors/ErrorPages'
+import { IngredientDetailPage } from './features/inventory/IngredientDetailPage'
+import { IngredientsPage } from './features/inventory/IngredientsPage'
+import { CategoriesPage } from './features/menu/CategoriesPage'
+import { MenuListPage } from './features/menu/MenuListPage'
+import { ProductDetailPage } from './features/menu/ProductDetailPage'
 import { PlaceholderPage } from './features/shared/PlaceholderPage'
+import { SuppliersPage } from './features/suppliers/SuppliersPage'
+import { TablesPage } from './features/tables/TablesPage'
 
 function page(title: string, permission: string, description?: string) {
   return (
@@ -46,19 +53,19 @@ export const router = createBrowserRouter([
           { path: '/dashboard', element: <DashboardPage /> },
           { path: '/orders', element: page('Pesanan', 'orders.view') },
           { path: '/orders/:id', element: page('Detail Pesanan', 'orders.view') },
-          { path: '/tables', element: page('Meja', 'tables.view') },
-          { path: '/menu', element: page('Menu', 'products.view') },
-          { path: '/menu/categories', element: page('Kategori Menu', 'products.view') },
-          { path: '/menu/:id', element: page('Detail Produk', 'products.view') },
-          { path: '/ingredients', element: page('Bahan', 'ingredients.view') },
-          { path: '/ingredients/:id', element: page('Detail Bahan', 'ingredients.view') },
+          { path: '/tables', element: <TablesPage /> },
+          { path: '/menu', element: <MenuListPage /> },
+          { path: '/menu/categories', element: <CategoriesPage /> },
+          { path: '/menu/:id', element: <ProductDetailPage /> },
+          { path: '/ingredients', element: <IngredientsPage /> },
+          { path: '/ingredients/:id', element: <IngredientDetailPage /> },
           { path: '/recipes/:variantId', element: page('Resep', 'recipes.view') },
           { path: '/inventory', element: page('Stok', 'inventory.view') },
           { path: '/inventory/opname', element: page('Stock Opname', 'stock_opname.view') },
           { path: '/inventory/opname/:id', element: page('Detail Opname', 'stock_opname.view') },
           { path: '/purchase', element: page('Pembelian', 'purchases.view') },
           { path: '/purchase/:id', element: page('Detail Pembelian', 'purchases.view') },
-          { path: '/suppliers', element: page('Supplier', 'suppliers.view') },
+          { path: '/suppliers', element: <SuppliersPage /> },
           { path: '/waste', element: page('Waste', 'waste.view') },
           { path: '/shifts', element: page('Shift', 'shifts.view') },
           { path: '/shifts/:id', element: page('Detail Shift', 'shifts.view') },
