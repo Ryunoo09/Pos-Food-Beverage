@@ -9,10 +9,16 @@ import { DashboardPage } from './features/dashboard/DashboardPage'
 import { ForbiddenPage, NotFoundPage } from './features/errors/ErrorPages'
 import { IngredientDetailPage } from './features/inventory/IngredientDetailPage'
 import { IngredientsPage } from './features/inventory/IngredientsPage'
+import { KitchenPage } from './features/kitchen/KitchenPage'
 import { CategoriesPage } from './features/menu/CategoriesPage'
 import { MenuListPage } from './features/menu/MenuListPage'
 import { ProductDetailPage } from './features/menu/ProductDetailPage'
+import { OrderDetailPage } from './features/orders/OrderDetailPage'
+import { OrdersPage } from './features/orders/OrdersPage'
+import { PosPage } from './features/pos/PosPage'
 import { PlaceholderPage } from './features/shared/PlaceholderPage'
+import { ShiftDetailPage } from './features/shifts/ShiftDetailPage'
+import { ShiftsPage } from './features/shifts/ShiftsPage'
 import { SuppliersPage } from './features/suppliers/SuppliersPage'
 import { TablesPage } from './features/tables/TablesPage'
 
@@ -35,7 +41,14 @@ export const router = createBrowserRouter([
         path: '/pos',
         element: <POSLayout />,
         children: [
-          { index: true, element: page('POS', 'orders.create') },
+          {
+            index: true,
+            element: (
+              <PermissionGate perm="orders.create" redirect="/403">
+                <PosPage />
+              </PermissionGate>
+            ),
+          },
           { path: '*', element: <NotFoundPage /> },
         ],
       },
@@ -43,7 +56,14 @@ export const router = createBrowserRouter([
         path: '/kitchen',
         element: <KDSLayout />,
         children: [
-          { index: true, element: page('Dapur (KDS)', 'kitchen.orders.view') },
+          {
+            index: true,
+            element: (
+              <PermissionGate perm="kitchen.orders.view" redirect="/403">
+                <KitchenPage />
+              </PermissionGate>
+            ),
+          },
           { path: '*', element: <NotFoundPage /> },
         ],
       },
@@ -51,8 +71,22 @@ export const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           { path: '/dashboard', element: <DashboardPage /> },
-          { path: '/orders', element: page('Pesanan', 'orders.view') },
-          { path: '/orders/:id', element: page('Detail Pesanan', 'orders.view') },
+          {
+            path: '/orders',
+            element: (
+              <PermissionGate perm="orders.view" redirect="/403">
+                <OrdersPage />
+              </PermissionGate>
+            ),
+          },
+          {
+            path: '/orders/:id',
+            element: (
+              <PermissionGate perm="orders.view" redirect="/403">
+                <OrderDetailPage />
+              </PermissionGate>
+            ),
+          },
           { path: '/tables', element: <TablesPage /> },
           { path: '/menu', element: <MenuListPage /> },
           { path: '/menu/categories', element: <CategoriesPage /> },
@@ -67,8 +101,22 @@ export const router = createBrowserRouter([
           { path: '/purchase/:id', element: page('Detail Pembelian', 'purchases.view') },
           { path: '/suppliers', element: <SuppliersPage /> },
           { path: '/waste', element: page('Waste', 'waste.view') },
-          { path: '/shifts', element: page('Shift', 'shifts.view') },
-          { path: '/shifts/:id', element: page('Detail Shift', 'shifts.view') },
+          {
+            path: '/shifts',
+            element: (
+              <PermissionGate perm="shifts.view_all" redirect="/403">
+                <ShiftsPage />
+              </PermissionGate>
+            ),
+          },
+          {
+            path: '/shifts/:id',
+            element: (
+              <PermissionGate perm="shifts.view" redirect="/403">
+                <ShiftDetailPage />
+              </PermissionGate>
+            ),
+          },
           { path: '/expenses', element: page('Pengeluaran', 'expenses.view') },
           { path: '/reports', element: page('Laporan', 'reports.sales.view') },
           { path: '/reports/sales', element: page('Laporan Penjualan', 'reports.sales.view') },

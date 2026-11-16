@@ -25,3 +25,31 @@ export function orderStatusTone(status: string): StatusTone {
 export function paymentStatusTone(status: string): StatusTone {
   return PAYMENT_TONES[status] ?? 'gray'
 }
+
+const ORDER_LABELS: Record<string, string> = {
+  DRAFT: 'Draft',
+  CONFIRMED: 'Dikonfirmasi',
+  IN_PROGRESS: 'Diproses',
+  READY: 'Siap',
+  SERVED: 'Disajikan',
+  COMPLETED: 'Selesai',
+  CANCELLED: 'Dibatalkan',
+}
+
+const PAYMENT_LABELS: Record<string, string> = {
+  UNPAID: 'Belum bayar',
+  PARTIAL: 'Sebagian',
+  PARTIALLY_PAID: 'Sebagian',
+  PAID: 'Lunas',
+  REFUNDED: 'Dikembalikan',
+  PARTIALLY_REFUNDED: 'Refund sebagian',
+  VOID: 'Void',
+}
+
+export function orderStatusLabel(status: string): string {
+  return ORDER_LABELS[status] ?? status
+}
+
+export function paymentStatusLabel(status: string): string {
+  return PAYMENT_LABELS[status] ?? status
+}

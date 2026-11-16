@@ -29,7 +29,7 @@ export function Select({
       <RadixSelect.Root value={value} onValueChange={onValueChange} disabled={disabled}>
         <RadixSelect.Trigger
           className="flex h-11 w-full items-center justify-between rounded-control border border-control bg-surface px-3 text-sm text-ink outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/20 disabled:opacity-50   "
-          aria-label={label}
+          aria-label={label ?? placeholder}
         >
           <RadixSelect.Value placeholder={placeholder} />
           <RadixSelect.Icon>
