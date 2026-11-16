@@ -77,7 +77,8 @@ func (r *Repository) methods(ctx context.Context, outletID, tz, from, to string)
 func (r *Repository) hourly(ctx context.Context, outletID, tz, from, to string) ([]HourPoint, error) {
 	const q = `
 		SELECT extract(hour FROM completed_at AT TIME ZONE $2)::int AS hour,
-		       COALESCE(SUM(total_amount), 0)::text
+		       COALESCE(SUM(total_amount), 0)::text,
+		       COUNT(*)::int
 		FROM orders
 		WHERE outlet_id = $1 AND status = 'COMPLETED'
 		  AND (completed_at AT TIME ZONE $2)::date BETWEEN $3::date AND $4::date
@@ -90,14 +91,18 @@ func (r *Repository) hourly(ctx context.Context, outletID, tz, from, to string) 
 	}
 	defer rows.Close()
 
-	found := map[int]string{}
+	type bucket struct {
+		sales        string
+		transactions int
+	}
+	found := map[int]bucket{}
 	for rows.Next() {
 		var hour int
-		var sales string
-		if err := rows.Scan(&hour, &sales); err != nil {
+		var b bucket
+		if err := rows.Scan(&hour, &b.sales, &b.transactions); err != nil {
 			return nil, fmt.Errorf("scan hourly: %w", err)
 		}
-		found[hour] = sales
+		found[hour] = b
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -105,11 +110,11 @@ func (r *Repository) hourly(ctx context.Context, outletID, tz, from, to string) 
 
 	items := make([]HourPoint, 24)
 	for h := range items {
-		sales, ok := found[h]
+		b, ok := found[h]
 		if !ok {
-			sales = "0"
+			b = bucket{sales: "0"}
 		}
-		items[h] = HourPoint{Hour: h, Sales: sales}
+		items[h] = HourPoint{Hour: h, Sales: b.sales, Transactions: b.transactions}
 	}
 	return items, nil
 }
