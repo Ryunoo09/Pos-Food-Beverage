@@ -216,6 +216,23 @@ func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, err, requestID)
 		return
 	}
+	if h.hub != nil && actor.OutletID != "" {
+		// ponytail: old_status tidak dikembalikan service; konsumen memakai new_status.
+		h.hub.Publish(actor.OutletID, sse.EventTypeOrderStatusChanged, sse.OrderStatusChangedPayload{
+			OrderID:   o.ID,
+			NewStatus: o.Status,
+			Timestamp: time.Now().UTC(),
+		})
+		if o.TableID != nil {
+			h.hub.Publish(actor.OutletID, sse.EventTypeTableStatusChanged, sse.TableStatusChangedPayload{
+				TableID:   *o.TableID,
+				TableNo:   strVal(o.TableName),
+				OldStatus: "OCCUPIED",
+				NewStatus: "AVAILABLE",
+				Timestamp: time.Now().UTC(),
+			})
+		}
+	}
 	httpx.WriteData(w, http.StatusOK, o, requestID)
 }
 
@@ -235,6 +252,19 @@ func (h *Handler) VoidItem(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httpx.WriteError(w, err, requestID)
 		return
+	}
+	if h.hub != nil && actor.OutletID != "" {
+		reason := strings.TrimSpace(in.ReasonCode)
+		if note := strings.TrimSpace(strVal(in.Note)); note != "" {
+			reason = note
+		}
+		h.hub.Publish(actor.OutletID, sse.EventTypeKitchenItemVoided, sse.ItemVoidedPayload{
+			OrderID:   o.ID,
+			ItemID:    r.PathValue("itemID"),
+			Reason:    reason,
+			VoidedBy:  actor.UserID,
+			Timestamp: time.Now().UTC(),
+		})
 	}
 	httpx.WriteData(w, http.StatusOK, o, requestID)
 }
