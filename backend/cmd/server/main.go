@@ -119,6 +119,7 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config, sseHu
 	mux.Handle("POST /api/v1/auth/logout", authed(http.HandlerFunc(h.Logout)))
 	mux.Handle("POST /api/v1/auth/logout-all", authed(http.HandlerFunc(h.LogoutAll)))
 	mux.Handle("GET /api/v1/auth/me", authed(http.HandlerFunc(h.Me)))
+	mux.Handle("POST /api/v1/auth/sse-token", authed(http.HandlerFunc(h.SSEToken)))
 	mux.Handle("POST /api/v1/auth/change-password", authed(http.HandlerFunc(h.ChangePassword)))
 	mux.Handle("GET /api/v1/auth/sessions", authed(perm("auth.sessions.view_own")(http.HandlerFunc(h.Sessions))))
 	mux.Handle("DELETE /api/v1/auth/sessions/{id}", authed(perm("auth.sessions.revoke_own")(http.HandlerFunc(h.DeleteSession))))
@@ -324,9 +325,11 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config, sseHu
 	mux.Handle("PATCH /api/v1/kitchen/items/{id}/status", authed(perm("kitchen.orders.update_status")(http.HandlerFunc(kitchenHandler.UpdateItemStatus))))
 	mux.Handle("PATCH /api/v1/kitchen/orders/{id}/priority", authed(perm("kitchen.orders.set_priority")(http.HandlerFunc(kitchenHandler.SetPriority))))
 
-	// SSE stream: auth Bearer, permission kitchen.orders.view.
+	// SSE stream: auth token SSE berumur pendek (atau Bearer biasa),
+	// permission kitchen.orders.view.
 	sseHandler := sse.NewHandler(sseHub)
-	mux.Handle("GET /api/v1/kitchen/stream", authed(perm("kitchen.orders.view")(http.HandlerFunc(sseHandler.Stream))))
+	sseAuthed := middleware.SSEAuthRequired(svc, cfg.JWTSecret)
+	mux.Handle("GET /api/v1/kitchen/stream", sseAuthed(perm("kitchen.orders.view")(http.HandlerFunc(sseHandler.Stream))))
 
 	return handlerChain(mux, logger)
 }

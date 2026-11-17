@@ -12,6 +12,7 @@ export const authApi = {
   logout: () => api.post<void>('/auth/logout'),
   logoutAll: () => api.post<void>('/auth/logout-all'),
   me: () => api.get<ApiResponse<{ user: AuthUser; permissions: string[] }>>('/auth/me'),
+  sseToken: () => api.post<ApiResponse<{ token: string; expires_in: number }>>('/auth/sse-token'),
   changePassword: (body: { current_password: string; new_password: string }) =>
     api.post<void>('/auth/change-password', body),
   sessions: () => api.get<ApiResponse<Session[]>>('/auth/sessions'),

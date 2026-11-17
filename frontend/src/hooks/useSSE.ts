@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useAuthStore } from '../store/auth'
+import { authApi } from '../api/auth'
 
 export interface SSEEvent {
   id: number
@@ -26,7 +26,9 @@ const MAX_DELAY = 15_000
  * dan Last-Event-ID via query param `last_event_id` (EventSource tidak bisa
  * set header custom, jadi token dikirim sebagai query param `token`).
  *
- * Token akses diambil dari auth store. Bila token hilang, koneksi ditutup.
+ * Token SSE berumur pendek (60 detik) diambil dari /auth/sse-token setiap kali
+ * koneksi dibuka; EventSource tidak bisa mengirim header custom sehingga token
+ * dikirim lewat query param. Access token penuh tidak pernah masuk URL.
  */
 export function useSSE({
   url,
@@ -35,7 +37,6 @@ export function useSSE({
   onConnectionChange,
   lastEventId,
 }: SSEOptions) {
-  const token = useAuthStore((s) => s.accessToken)
   const handlerRef = useRef(onEvent)
   const fullReloadRef = useRef(onFullReload)
   const connChangeRef = useRef(onConnectionChange)
@@ -50,8 +51,8 @@ export function useSSE({
     connChangeRef.current = onConnectionChange
   })
 
-  // Koneksi dibuat sekali per (url, token, lastEventId); callback lewat ref
-  // agar perubahan callback di parent tidak trigger reconnect.
+  // Koneksi dibuat sekali per (url, lastEventId); callback lewat ref agar
+  // perubahan callback di parent tidak trigger reconnect.
   useEffect(() => {
     let source: EventSource | null = null
     let attempt = 0
@@ -59,10 +60,28 @@ export function useSSE({
     let closed = false
     let currentLastId = lastEventId ?? 0
 
-    function open() {
+    function retry() {
+      connChangeRef.current?.('reconnecting')
+      const delay = Math.min(MAX_DELAY, 1000 * 2 ** attempt)
+      attempt += 1
+      timer = window.setTimeout(() => void open(), delay)
+    }
+
+    async function open() {
       if (closed) return
+
+      // Token pendek per koneksi: kalau gagal ambil token, masuk backoff.
+      let token: string
+      try {
+        token = (await authApi.sseToken()).data.data.token
+      } catch {
+        if (!closed) retry()
+        return
+      }
+      if (closed) return
+
       const target = new URL(url, window.location.origin)
-      if (token) target.searchParams.set('token', token)
+      target.searchParams.set('token', token)
       if (currentLastId > 0) target.searchParams.set('last_event_id', String(currentLastId))
 
       source = new EventSource(target.toString())
@@ -122,14 +141,11 @@ export function useSSE({
       source.onerror = () => {
         source?.close()
         if (closed) return
-        connChangeRef.current?.('reconnecting')
-        const delay = Math.min(MAX_DELAY, 1000 * 2 ** attempt)
-        attempt += 1
-        timer = window.setTimeout(open, delay)
+        retry()
       }
     }
 
-    open()
+    void open()
 
     return () => {
       closed = true
@@ -137,5 +153,5 @@ export function useSSE({
       window.clearTimeout(timer)
       source?.close()
     }
-  }, [url, token, lastEventId])
+  }, [url, lastEventId])
 }

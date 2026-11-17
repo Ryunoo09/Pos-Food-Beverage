@@ -274,6 +274,19 @@ func (s *Service) Me(ctx context.Context, userID string) (*User, []string, error
 	return user, perms, nil
 }
 
+// sseTokenTTL singkat: token muncul di URL (EventSource tanpa header custom).
+const sseTokenTTL = 60 * time.Second
+
+// SSEToken menerbitkan token khusus koneksi SSE; tidak berlaku untuk endpoint
+// lain karena middleware AuthRequired menolak scope "sse".
+func (s *Service) SSEToken(userID, businessID string) (string, int, error) {
+	token, err := NewSSEToken(s.secret, sseTokenTTL, userID, businessID)
+	if err != nil {
+		return "", 0, err
+	}
+	return token, int(sseTokenTTL.Seconds()), nil
+}
+
 // ChangePassword mewajibkan password lama dan mencabut seluruh sesi.
 func (s *Service) ChangePassword(ctx context.Context, actor Actor, current, next string) error {
 	user, err := s.repo.FindUserByID(ctx, actor.UserID)

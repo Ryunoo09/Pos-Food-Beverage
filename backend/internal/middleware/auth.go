@@ -16,6 +16,17 @@ import (
 // Token bisa dari header Authorization atau query param ?token=...
 // (EventSource tidak bisa set header custom; SSE stream pakai query param).
 func AuthRequired(svc *auth.Service, secret string) func(http.Handler) http.Handler {
+	return authWithScope(svc, secret, false)
+}
+
+// SSEAuthRequired sama seperti AuthRequired, tetapi juga menerima token SSE
+// berumur pendek. Token SSE ditolak AuthRequired agar tidak bisa dipakai untuk
+// endpoint lain.
+func SSEAuthRequired(svc *auth.Service, secret string) func(http.Handler) http.Handler {
+	return authWithScope(svc, secret, true)
+}
+
+func authWithScope(svc *auth.Service, secret string, allowSSE bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
@@ -34,6 +45,16 @@ func AuthRequired(svc *auth.Service, secret string) func(http.Handler) http.Hand
 
 			claims, err := auth.ParseAccessToken(secret, raw)
 			if err != nil {
+				httpx.WriteError(w, httpx.NewError(http.StatusUnauthorized, "AUTH_TOKEN_EXPIRED",
+					"Sesi sudah berakhir. Silakan login ulang."), requestID)
+				return
+			}
+			if claims.Scope == "sse" && !allowSSE {
+				httpx.WriteError(w, httpx.NewError(http.StatusUnauthorized, "AUTH_TOKEN_EXPIRED",
+					"Sesi sudah berakhir. Silakan login ulang."), requestID)
+				return
+			}
+			if claims.Scope != "" && claims.Scope != "sse" {
 				httpx.WriteError(w, httpx.NewError(http.StatusUnauthorized, "AUTH_TOKEN_EXPIRED",
 					"Sesi sudah berakhir. Silakan login ulang."), requestID)
 				return

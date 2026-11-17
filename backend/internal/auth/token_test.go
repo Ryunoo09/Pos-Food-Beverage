@@ -5,8 +5,7 @@ import (
 	"time"
 )
 
-func TestHashPassword_VerifyRoundTrip(t *testing.T) {
-	hash, err := HashPassword("rahasia-yang-kuat")
+func TestHashPassword_VerifyRoundTrip(t *testing.T) {	hash, err := HashPassword("rahasia-yang-kuat")
 	if err != nil {
 		t.Fatalf("hash: %v", err)
 	}
@@ -132,5 +131,29 @@ func TestGuardRoleAssignment(t *testing.T) {
 	}
 	if err := svc.guardRoleAssignment(owner, ownerRole, []string{"OWNER"}); err != nil {
 		t.Errorf("OWNER ditolak saat menyentuh OWNER: %v", err)
+	}
+}
+
+// TestNewSSEToken_ShortLivedWithScope: token SSE membawa scope "sse" dan
+// kedaluwarsa 60 detik, sehingga tidak bisa dipakai sebagai access token biasa.
+func TestNewSSEToken_ShortLivedWithScope(t *testing.T) {
+	const secret = "rahasia-test"
+	token, err := NewSSEToken(secret, 60*time.Second, "user-1", "biz-1")
+	if err != nil {
+		t.Fatalf("buat token: %v", err)
+	}
+
+	claims, err := ParseAccessToken(secret, token)
+	if err != nil {
+		t.Fatalf("parse token: %v", err)
+	}
+	if claims.Scope != "sse" {
+		t.Errorf("scope = %q, mau \"sse\"", claims.Scope)
+	}
+	if claims.Subject != "user-1" || claims.BusinessID != "biz-1" {
+		t.Errorf("claims salah: %+v", claims)
+	}
+	if claims.ExpiresAt == nil || time.Until(claims.ExpiresAt.Time) > 61*time.Second {
+		t.Errorf("umur token tidak ≤ 60 detik: %v", claims.ExpiresAt)
 	}
 }
