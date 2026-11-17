@@ -133,3 +133,86 @@ func TestMultiClient(t *testing.T) {
 		t.Fatal("client2 tidak menerima")
 	}
 }
+
+// TestSubscribe_ReplayMany: reconnect setelah kehilangan banyak event tidak
+// boleh memblokir Subscribe (channel cukup untuk seluruh ring buffer).
+func TestSubscribe_ReplayMany(t *testing.T) {
+	h := NewHub()
+	outlet := "o1"
+
+	first := h.Publish(outlet, "e", nil)
+	for i := 0; i < 40; i++ {
+		h.Publish(outlet, "e", nil)
+	}
+
+	done := make(chan struct{})
+	var ch <-chan Event
+	go func() {
+		ch, _ = h.Subscribe(outlet, first)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Subscribe deadlock saat replay banyak event")
+	}
+
+	for i := 0; i < 40; i++ {
+		select {
+		case ev := <-ch:
+			if ev.ID <= first {
+				t.Fatalf("replay memuat event lama: %d <= %d", ev.ID, first)
+			}
+		case <-time.After(500 * time.Millisecond):
+			t.Fatalf("replay kurang: baru %d dari 40", i)
+		}
+	}
+}
+
+// TestSubscribe_RestartFullReload: buffer kosong (server restart) + lastID
+// lama harus memicu full_reload, bukan diam.
+func TestSubscribe_RestartFullReload(t *testing.T) {
+	h := NewHub()
+
+	ch, unsub := h.Subscribe("o1", 42)
+	defer unsub()
+
+	select {
+	case ev := <-ch:
+		if ev.Type != "full_reload" {
+			t.Fatalf("harus full_reload, dapat %s", ev.Type)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("tidak ada full_reload setelah restart")
+	}
+}
+
+// TestPublish_KitchenStaffNoPayment: subscriber tanpa permission
+// payments.view (mis. staf dapur) tidak menerima event pembayaran; kasir
+// yang punya payments.view tetap menerima.
+func TestPublish_KitchenStaffNoPayment(t *testing.T) {
+	h := NewHub()
+	outlet := "o1"
+
+	kitchen, unKitchen := h.Subscribe(outlet, 0, "kitchen.orders.view", "kitchen.orders.update_status")
+	defer unKitchen()
+	cashier, unCashier := h.Subscribe(outlet, 0, "orders.view", "payments.view")
+	defer unCashier()
+
+	h.Publish(outlet, EventTypeOrderPaymentStatusChanged, map[string]string{"payment_status": "PAID"})
+
+	select {
+	case ev := <-kitchen:
+		t.Fatalf("KITCHEN_STAFF menerima event pembayaran: %s", ev.Type)
+	case <-time.After(200 * time.Millisecond):
+	}
+	select {
+	case ev := <-cashier:
+		if ev.Type != EventTypeOrderPaymentStatusChanged {
+			t.Fatalf("kasir harus menerima event pembayaran, dapat %s", ev.Type)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("kasir tidak menerima event pembayaran")
+	}
+}

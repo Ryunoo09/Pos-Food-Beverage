@@ -61,7 +61,7 @@ func (h *Handler) Stream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ch, unsub := h.hub.Subscribe(actor.OutletID, lastID)
+	ch, unsub := h.hub.Subscribe(actor.OutletID, lastID, actor.Permissions...)
 	defer unsub()
 
 	// Sapa awal: pastikan koneksi flush pertama.
