@@ -34,6 +34,7 @@ import (
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/report"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/settings"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/shift"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/sse"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/supplier"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/table"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/waste"
@@ -64,9 +65,13 @@ func run(logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	// SSE hub: event realtime KDS + denah meja. Ping loop jalan selama server hidup.
+	sseHub := sse.NewHub()
+	go sseHub.StartPingLoop(ctx)
+
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           newRouter(pool, logger, cfg),
+		Handler:           newRouter(pool, logger, cfg, sseHub),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -96,7 +101,7 @@ func run(logger *slog.Logger) error {
 	return nil
 }
 
-func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.Handler {
+func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config, sseHub *sse.Hub) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", healthHandler(pool))
 
@@ -259,7 +264,7 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("GET /api/v1/reports/shifts", authed(perm("reports.shift.view")(http.HandlerFunc(reportHandler.Shifts))))
 	mux.Handle("GET /api/v1/reports/{type}/export", authed(perm("reports.export")(http.HandlerFunc(reportHandler.Export))))
 
-	orderHandler := order.NewHandler(order.NewService(order.NewRepository(pool)))
+	orderHandler := order.NewHandler(order.NewService(order.NewRepository(pool)), sseHub)
 	mux.Handle("GET /api/v1/orders", authed(perm("orders.view")(http.HandlerFunc(orderHandler.List))))
 	mux.Handle("GET /api/v1/orders/{id}", authed(perm("orders.view")(http.HandlerFunc(orderHandler.Get))))
 	mux.Handle("POST /api/v1/orders", authed(perm("orders.create")(http.HandlerFunc(orderHandler.CreateDraft))))
@@ -273,7 +278,7 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("GET /api/v1/orders/{id}/receipt", authed(perm("orders.view")(http.HandlerFunc(orderHandler.Receipt))))
 	mux.Handle("POST /api/v1/orders/{id}/receipt/reprint", authed(perm("orders.reprint_receipt")(http.HandlerFunc(orderHandler.ReprintReceipt))))
 
-	paymentHandler := payment.NewHandler(payment.NewService(payment.NewRepository(pool), auditWriter))
+	paymentHandler := payment.NewHandler(payment.NewService(payment.NewRepository(pool), auditWriter), sseHub)
 	mux.Handle("POST /api/v1/orders/{id}/payments", authed(perm("payments.create")(http.HandlerFunc(paymentHandler.Create))))
 	mux.Handle("GET /api/v1/orders/{id}/payments", authed(perm("payments.view")(http.HandlerFunc(paymentHandler.List))))
 	mux.Handle("POST /api/v1/payments/{id}/void", authed(perm("payments.void")(http.HandlerFunc(paymentHandler.Void))))
@@ -305,7 +310,7 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("GET /api/v1/audit-logs", authed(perm("audit.view")(http.HandlerFunc(auditHandler.List))))
 	mux.Handle("GET /api/v1/audit-logs/export", authed(perm("audit.export")(http.HandlerFunc(auditHandler.Export))))
 
-	tableHandler := table.NewHandler(table.NewService(table.NewRepository(pool)))
+	tableHandler := table.NewHandler(table.NewService(table.NewRepository(pool)), sseHub)
 	mux.Handle("GET /api/v1/tables", authed(perm("tables.view")(http.HandlerFunc(tableHandler.List))))
 	mux.Handle("GET /api/v1/tables/{id}", authed(perm("tables.view")(http.HandlerFunc(tableHandler.Get))))
 	mux.Handle("POST /api/v1/tables", authed(perm("tables.manage")(http.HandlerFunc(tableHandler.Create))))
@@ -313,11 +318,15 @@ func newRouter(pool *pgxpool.Pool, logger *slog.Logger, cfg config.Config) http.
 	mux.Handle("PATCH /api/v1/tables/{id}/status", authed(perm("tables.manage")(http.HandlerFunc(tableHandler.SetStatus))))
 	mux.Handle("DELETE /api/v1/tables/{id}", authed(perm("tables.manage")(http.HandlerFunc(tableHandler.Delete))))
 
-	kitchenHandler := kitchen.NewHandler(kitchen.NewService(kitchen.NewRepository(pool)))
+	kitchenHandler := kitchen.NewHandler(kitchen.NewService(kitchen.NewRepository(pool)), sseHub)
 	mux.Handle("GET /api/v1/kitchen/orders", authed(perm("kitchen.orders.view")(http.HandlerFunc(kitchenHandler.List))))
 	mux.Handle("GET /api/v1/kitchen/orders/history", authed(perm("kitchen.orders.view")(http.HandlerFunc(kitchenHandler.History))))
 	mux.Handle("PATCH /api/v1/kitchen/items/{id}/status", authed(perm("kitchen.orders.update_status")(http.HandlerFunc(kitchenHandler.UpdateItemStatus))))
 	mux.Handle("PATCH /api/v1/kitchen/orders/{id}/priority", authed(perm("kitchen.orders.set_priority")(http.HandlerFunc(kitchenHandler.SetPriority))))
+
+	// SSE stream: auth Bearer, permission kitchen.orders.view.
+	sseHandler := sse.NewHandler(sseHub)
+	mux.Handle("GET /api/v1/kitchen/stream", authed(perm("kitchen.orders.view")(http.HandlerFunc(sseHandler.Stream))))
 
 	return handlerChain(mux, logger)
 }

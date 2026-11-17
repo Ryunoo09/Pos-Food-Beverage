@@ -103,18 +103,28 @@ func (r *Repository) Update(ctx context.Context, outletID, id string, in Input) 
 	return t, nil
 }
 
-// SetStatus mengubah status operasional meja.
-func (r *Repository) SetStatus(ctx context.Context, outletID, id, status string) error {
+// SetStatus mengubah status operasional meja. Mengambil status lama dulu,
+// lalu update; mengembalikan status lama untuk payload SSE.
+func (r *Repository) SetStatus(ctx context.Context, outletID, id, status string) (string, error) {
+	var oldStatus string
+	err := r.pool.QueryRow(ctx,
+		`SELECT status FROM tables WHERE id = $1 AND outlet_id = $2`, id, outletID).Scan(&oldStatus)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("getTableStatus: %w", err)
+	}
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE tables SET status = $3, updated_at = now() WHERE id = $1 AND outlet_id = $2`,
 		id, outletID, status)
 	if err != nil {
-		return fmt.Errorf("setTableStatus: %w", err)
+		return "", fmt.Errorf("setTableStatus: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		return ErrNotFound
+		return "", ErrNotFound
 	}
-	return nil
+	return oldStatus, nil
 }
 
 // HasActiveOrder melaporkan apakah meja masih dipakai pesanan aktif.

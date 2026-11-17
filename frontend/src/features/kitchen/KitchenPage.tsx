@@ -1,5 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Flame, RefreshCw } from 'lucide-react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { Flame, RefreshCw, Wifi, WifiOff } from 'lucide-react'
 import { useState } from 'react'
 import {
   KITCHEN_STATUS_LABELS,
@@ -12,6 +12,7 @@ import { Spinner } from '../../components/ui/Spinner'
 import { useToast } from '../../hooks/useToast'
 import { apiMessage } from '../../utils/apiError'
 import { cn } from '../../utils/cn'
+import { useKitchenState } from './useKitchenState'
 
 const FILTERS = [
   { value: '', label: 'Semua aktif' },
@@ -32,12 +33,7 @@ export function KitchenPage() {
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
 
-  const tickets = useQuery({
-    queryKey: ['kitchen', status],
-    queryFn: async () =>
-      (await kitchenApi.list(status ? { status } : {})).data.data,
-    refetchInterval: 5_000,
-  })
+  const { tickets, connStatus, refetch } = useKitchenState(status)
 
   const update = useMutation({
     mutationFn: ({ item, next }: { item: KitchenItem; next: KitchenStatus }) =>
@@ -80,6 +76,11 @@ export function KitchenPage() {
     }
   }
 
+  const connLabel =
+    connStatus === 'connected' ? 'Realtime tersambung' :
+    connStatus === 'reconnecting' ? 'Menghubungkan ulang…' :
+    'Realtime terputus'
+
   return (
     <div className="flex min-h-[calc(100dvh-8rem)] flex-col">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -102,8 +103,16 @@ export function KitchenPage() {
         </div>
         <div className="flex items-center gap-3 text-sm text-muted">
           {tickets.isFetching && <RefreshCw className="size-4 animate-spin" strokeWidth={1.5} />}
-          <span>Diperbarui tiap 5 detik</span>
-          <Button variant="secondary" size="sm" onClick={() => tickets.refetch()}>
+          <span className={cn(
+            'inline-flex items-center gap-1.5',
+            connStatus === 'connected' ? 'text-positive' : connStatus === 'reconnecting' ? 'text-warning' : 'text-negative',
+          )}>
+            {connStatus === 'connected'
+              ? <Wifi className="size-4" strokeWidth={1.5} />
+              : <WifiOff className="size-4" strokeWidth={1.5} />}
+            {connLabel}
+          </span>
+          <Button variant="secondary" size="sm" onClick={refetch}>
             Muat ulang
           </Button>
         </div>
@@ -167,11 +176,11 @@ export function KitchenPage() {
                           {item.note && (
                             <p className="text-sm font-medium text-warning">Catatan: {item.note}</p>
                           )}
-                          <Badge tone={item.status === 'READY' ? 'green' : item.status === 'NEW' ? 'gray' : 'yellow'}>
+                          <Badge tone={item.status === 'READY' ? 'green' : item.status === 'NEW' ? 'gray' : item.status === 'VOID' ? 'red' : 'yellow'}>
                             {KITCHEN_STATUS_LABELS[item.status]}
                           </Badge>
                         </div>
-                        {NEXT_STATUS[item.status] && (
+                        {item.status !== 'VOID' && NEXT_STATUS[item.status] && (
                           <Button
                             size="sm"
                             variant={item.status === 'COOKING' ? 'primary' : 'secondary'}
@@ -208,7 +217,7 @@ export function KitchenPage() {
                     size="sm"
                     loading={busy === ticket.id}
                     onClick={() => setAllReady(ticket)}
-                    disabled={ticket.items.every((item) => item.status === 'READY' || item.status === 'SERVED')}
+                    disabled={ticket.items.every((item) => item.status === 'READY' || item.status === 'SERVED' || item.status === 'VOID')}
                   >
                     Semua siap
                   </Button>

@@ -2,13 +2,14 @@ import { api } from './client'
 import type { ApiResponse } from '../types/api.types'
 
 export const KITCHEN_STATUSES = ['NEW', 'COOKING', 'READY', 'SERVED'] as const
-export type KitchenStatus = (typeof KITCHEN_STATUSES)[number]
+export type KitchenStatus = (typeof KITCHEN_STATUSES)[number] | 'VOID'
 
 export const KITCHEN_STATUS_LABELS: Record<KitchenStatus, string> = {
   NEW: 'Baru',
   COOKING: 'Dimasak',
   READY: 'Siap',
   SERVED: 'Disajikan',
+  VOID: 'Dibatalkan',
 }
 
 export interface KitchenItem {

@@ -11,6 +11,7 @@ type Order struct {
 	PaymentStatus  string      `json:"payment_status"`
 	PaymentTiming  string      `json:"payment_timing"`
 	TableID        *string     `json:"table_id,omitempty"`
+	TableName      *string     `json:"table_name,omitempty"`
 	CustomerName   *string     `json:"customer_name,omitempty"`
 	CustomerPhone  *string     `json:"customer_phone,omitempty"`
 	DelivAddress   *string     `json:"delivery_address,omitempty"`

@@ -2,17 +2,20 @@ package table
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/auth"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/httpx"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/sse"
 )
 
 type Handler struct {
 	svc *Service
+	hub *sse.Hub
 }
 
-func NewHandler(svc *Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *Service, hub *sse.Hub) *Handler {
+	return &Handler{svc: svc, hub: hub}
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
@@ -89,9 +92,22 @@ func (h *Handler) SetStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.SetStatus(r.Context(), actor, r.PathValue("id"), in); err != nil {
+	old, err := h.svc.SetStatus(r.Context(), actor, r.PathValue("id"), in)
+	if err != nil {
 		httpx.WriteError(w, err, requestID)
 		return
+	}
+	if h.hub != nil && actor.OutletID != "" {
+		t, _ := h.svc.Table(r.Context(), actor, r.PathValue("id"))
+		no := ""
+		if t != nil {
+			no = t.Number
+		}
+		h.hub.Publish(actor.OutletID, sse.EventTypeTableStatusChanged, sse.TableStatusChangedPayload{
+			TableID: r.PathValue("id"), TableNo: no,
+			OldStatus: old, NewStatus: in.Status,
+			Timestamp: time.Now().UTC(),
+		})
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
