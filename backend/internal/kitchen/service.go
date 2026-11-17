@@ -50,49 +50,55 @@ func (s *Service) History(ctx context.Context, actor auth.Actor, f HistoryFilter
 }
 
 // UpdateItemStatus mengubah status satu item dengan optimistic lock pada version
-// lalu menyimpulkan ulang status tiket.
-func (s *Service) UpdateItemStatus(ctx context.Context, actor auth.Actor, itemID string, in StatusInput) (*Order, error) {
+// lalu menyimpulkan ulang status tiket. Mengembalikan tiket akhir dan status
+// lama item (untuk payload SSE).
+func (s *Service) UpdateItemStatus(ctx context.Context, actor auth.Actor, itemID string, in StatusInput) (*Order, string, error) {
 	if actor.OutletID == "" {
-		return nil, outletMissing()
+		return nil, "", outletMissing()
 	}
 	status := strings.ToUpper(strings.TrimSpace(in.Status))
 	if !validStatus(status) {
-		return nil, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR",
+		return nil, "", httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR",
 			"status harus NEW, COOKING, READY, atau SERVED.")
 	}
 	if in.Version < 1 {
-		return nil, httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR", "version wajib diisi.")
+		return nil, "", httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR", "version wajib diisi.")
 	}
 
 	tx, err := s.repo.Begin(ctx)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer tx.Rollback(ctx)
 
 	item, ok, err := s.repo.ItemForUpdate(ctx, tx, itemID)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if !ok || item.outletID != actor.OutletID {
-		return nil, itemNotFound()
+		return nil, "", itemNotFound()
 	}
 
 	updated, err := s.repo.SetItemStatus(ctx, tx, itemID, status, in.Version)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if !updated {
-		return nil, httpx.NewError(http.StatusConflict, "VERSION_CONFLICT",
+		return nil, "", httpx.NewError(http.StatusConflict, "VERSION_CONFLICT",
 			"Item sudah diubah pengguna lain; muat ulang tiket.")
 	}
 	if err := s.repo.RecomputeOrderStatus(ctx, tx, item.kitchenOrderID); err != nil {
-		return nil, err
+		return nil, "", err
 	}
+	oldStatus := item.Status
 	if err := tx.Commit(ctx); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return s.repo.Get(ctx, actor.OutletID, item.kitchenOrderID)
+	o, err := s.repo.Get(ctx, actor.OutletID, item.kitchenOrderID)
+	if err != nil {
+		return nil, "", err
+	}
+	return o, oldStatus, nil
 }
 
 // SetPriority menandai tiket RUSH/NORMAL untuk mempercepat antrean.

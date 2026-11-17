@@ -19,6 +19,14 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
+// Flush meneruskan ke ResponseWriter bawaan agar handler SSE tetap bisa
+// flush frame. Tanpa ini assertion http.Flusher di handler SSE gagal (500).
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // AccessLog mencatat setiap request dalam satu baris JSON via slog.
 func AccessLog(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

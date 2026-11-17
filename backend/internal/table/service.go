@@ -72,20 +72,20 @@ func (s *Service) Update(ctx context.Context, actor auth.Actor, id string, in In
 	return t, nil
 }
 
-func (s *Service) SetStatus(ctx context.Context, actor auth.Actor, id string, in StatusInput) error {
+func (s *Service) SetStatus(ctx context.Context, actor auth.Actor, id string, in StatusInput) (string, error) {
 	if actor.OutletID == "" {
-		return outletMissing()
+		return "", outletMissing()
 	}
 	status := strings.ToUpper(strings.TrimSpace(in.Status))
 	if !validStatus(status) {
-		return httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR",
+		return "", httpx.NewError(http.StatusBadRequest, "VALIDATION_ERROR",
 			"status harus AVAILABLE, OCCUPIED, RESERVED, atau CLEANING.")
 	}
-	err := s.repo.SetStatus(ctx, actor.OutletID, id, status)
+	old, err := s.repo.SetStatus(ctx, actor.OutletID, id, status)
 	if errors.Is(err, ErrNotFound) {
-		return notFound()
+		return "", notFound()
 	}
-	return err
+	return old, err
 }
 
 func (s *Service) Delete(ctx context.Context, actor auth.Actor, id string) error {

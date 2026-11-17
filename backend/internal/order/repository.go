@@ -113,18 +113,21 @@ func (r *Repository) OrderTx(ctx context.Context, q querier, outletID, id string
 
 func orderQuery(ctx context.Context, q querier, outletID, id string) (*Order, error) {
 	const query = `
-		SELECT id, order_no, queue_no, service_type, status, payment_status, payment_timing,
-		       table_id, customer_name, customer_phone, delivery_address, note, priority,
-		       subtotal_amount::text, item_discount_amount::text, order_discount_amount::text,
-		       service_charge_rate::text, service_charge_amount::text, tax_rate::text,
-		       tax_amount::text, tax_inclusive, rounding_amount::text, total_amount::text,
-		       paid_amount::text, total_cogs::text, created_at, confirmed_at, pricing_snapshot
-		FROM orders WHERE id = $1 AND outlet_id = $2`
+		SELECT o.id, o.order_no, o.queue_no, o.service_type, o.status, o.payment_status, o.payment_timing,
+		       o.table_id, t.number, o.customer_name, o.customer_phone, o.delivery_address, o.note, o.priority,
+		       o.subtotal_amount::text, o.item_discount_amount::text, o.order_discount_amount::text,
+		       o.service_charge_rate::text, o.service_charge_amount::text, o.tax_rate::text,
+		       o.tax_amount::text, o.tax_inclusive, o.rounding_amount::text, o.total_amount::text,
+		       o.paid_amount::text, o.total_cogs::text, o.created_at, o.confirmed_at, o.pricing_snapshot
+		FROM orders o
+		LEFT JOIN tables t ON t.id = o.table_id
+		WHERE o.id = $1 AND o.outlet_id = $2`
 
 	o := &Order{}
 	var snapshot []byte
 	err := q.QueryRow(ctx, query, id, outletID).Scan(&o.ID, &o.OrderNo, &o.QueueNo,
 		&o.ServiceType, &o.Status, &o.PaymentStatus, &o.PaymentTiming, &o.TableID,
+		&o.TableName,
 		&o.CustomerName, &o.CustomerPhone, &o.DelivAddress, &o.Note, &o.Priority,
 		&o.SubtotalAmount, &o.ItemDiscount,
 		&o.OrderDiscount, &o.ServiceRate, &o.ServiceAmount, &o.TaxRate, &o.TaxAmount,

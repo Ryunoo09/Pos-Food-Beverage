@@ -12,14 +12,21 @@ import (
 // terbaru dari DB (bukan dari token) agar perubahan hak akses langsung berlaku.
 // Query permission per request diterima untuk MVP; tambahkan cache TTL 60s bila
 // profiling menunjukkan beban DB.
+//
+// Token bisa dari header Authorization atau query param ?token=...
+// (EventSource tidak bisa set header custom; SSE stream pakai query param).
 func AuthRequired(svc *auth.Service, secret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 			requestID := httpx.RequestIDFrom(ctx)
 
+			// Header Authorization utama; query param sebagai fallback untuk SSE.
 			raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 			if !ok || raw == "" {
+				raw = r.URL.Query().Get("token")
+			}
+			if raw == "" {
 				httpx.WriteError(w, httpx.NewError(http.StatusUnauthorized, "AUTH_TOKEN_MISSING",
 					"Token akses tidak ditemukan."), requestID)
 				return

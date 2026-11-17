@@ -8,14 +8,16 @@ import (
 
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/auth"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/httpx"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/sse"
 )
 
 type Handler struct {
 	svc *Service
+	hub *sse.Hub
 }
 
-func NewHandler(svc *Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *Service, hub *sse.Hub) *Handler {
+	return &Handler{svc: svc, hub: hub}
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
@@ -70,10 +72,20 @@ func (h *Handler) UpdateItemStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	o, err := h.svc.UpdateItemStatus(r.Context(), actor, r.PathValue("id"), in)
+	o, oldStatus, err := h.svc.UpdateItemStatus(r.Context(), actor, r.PathValue("id"), in)
 	if err != nil {
 		httpx.WriteError(w, err, requestID)
 		return
+	}
+	if o != nil && h.hub != nil && actor.OutletID != "" {
+		h.hub.Publish(actor.OutletID, sse.EventTypeKitchenItemStatusChanged, sse.ItemStatusChangedPayload{
+			OrderID:   o.OrderID,
+			ItemID:    r.PathValue("id"),
+			OldStatus: oldStatus,
+			NewStatus: in.Status,
+			UpdatedBy: actor.UserID,
+			Timestamp: time.Now().UTC(),
+		})
 	}
 	httpx.WriteData(w, http.StatusOK, o, requestID)
 }

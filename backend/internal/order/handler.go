@@ -4,17 +4,81 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/auth"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/httpx"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/sse"
 )
 
 type Handler struct {
 	svc *Service
+	// hub SSE untuk publish event realtime; nil = publish dimatikan.
+	hub *sse.Hub
 }
 
-func NewHandler(svc *Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *Service, hub *sse.Hub) *Handler {
+	return &Handler{svc: svc, hub: hub}
+}
+
+// publishConfirm mengirim event SSE setelah commit: tiket dapur dibuat +
+// status meja menjadi OCCUPIED (bila dine-in).
+func (h *Handler) publishConfirm(o *Order, outletID string) {
+	items := make([]sse.KitchenItem, 0, len(o.Items))
+	for _, it := range o.Items {
+		if it.Status != "ACTIVE" {
+			continue
+		}
+		items = append(items, sse.KitchenItem{
+			Name:     it.ProductName,
+			Variant:  it.VariantName,
+			Note:     strVal(it.Note),
+			Quantity: it.Quantity,
+		})
+	}
+	var createdAt *time.Time = nil
+	if o.ConfirmedAt != nil {
+		createdAt = o.ConfirmedAt
+	}
+	h.hub.Publish(outletID, sse.EventTypeKitchenOrderCreated, sse.KitchenOrderCreatedPayload{
+		OrderID:     o.ID,
+		OrderNo:     o.OrderNo,
+		QueueNo:     o.QueueNo,
+		ServiceType: o.ServiceType,
+		TableName:   o.TableName,
+		RoundNo:     1,
+		Priority:    o.Priority,
+		Items:       items,
+		CreatedAt:   timePtr(createdAt),
+	})
+	h.hub.Publish(outletID, sse.EventTypeOrderStatusChanged, sse.OrderStatusChangedPayload{
+		OrderID:   o.ID,
+		OldStatus: "DRAFT",
+		NewStatus: o.Status,
+		Timestamp: timePtr(createdAt),
+	})
+	if o.TableID != nil {
+		no := strVal(o.TableName)
+		h.hub.Publish(outletID, sse.EventTypeTableStatusChanged, sse.TableStatusChangedPayload{
+			TableID: *o.TableID, TableNo: no,
+			OldStatus: "AVAILABLE", NewStatus: "OCCUPIED",
+			Timestamp: timePtr(createdAt),
+		})
+	}
+}
+
+func timePtr(p *time.Time) time.Time {
+	if p != nil {
+		return *p
+	}
+	return time.Time{}
+}
+
+func strVal(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
@@ -127,6 +191,10 @@ func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httpx.WriteError(w, err, requestID)
 		return
+	}
+	// Emit SSE setelah commit: tiket dapur baru + status meja (bila dine-in).
+	if h.hub != nil && actor.OutletID != "" {
+		h.publishConfirm(o, actor.OutletID)
 	}
 	httpx.WriteData(w, http.StatusOK, o, requestID)
 }

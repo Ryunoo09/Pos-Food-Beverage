@@ -4,17 +4,20 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/auth"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/httpx"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/sse"
 )
 
 type Handler struct {
 	svc *Service
+	hub *sse.Hub
 }
 
-func NewHandler(svc *Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *Service, hub *sse.Hub) *Handler {
+	return &Handler{svc: svc, hub: hub}
 }
 
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
@@ -30,6 +33,18 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httpx.WriteError(w, err, requestID)
 		return
+	}
+	if h.hub != nil && actor.OutletID != "" {
+		ts := time.Time{}
+		if result.Payment.PaidAt != nil {
+			ts = *result.Payment.PaidAt
+		}
+		h.hub.Publish(actor.OutletID, sse.EventTypeOrderPaymentStatusChanged, sse.OrderPaymentStatusChangedPayload{
+			OrderID: result.Payment.OrderID,
+			PaymentStatus: result.Order.PaymentStatus,
+			OrderStatus:   result.Order.Status,
+			Timestamp:     ts,
+		})
 	}
 	httpx.WriteData(w, http.StatusCreated, result, requestID)
 }
