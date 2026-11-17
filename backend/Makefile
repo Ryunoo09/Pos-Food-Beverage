@@ -1,4 +1,4 @@
-.PHONY: build run seed test lint fmt tidy migrate-up migrate-down migrate-create backup backup-encrypted
+.PHONY: build run seed test lint fmt tidy migrate-up migrate-down migrate-create backup backup-encrypted verify-backup restore-test
 
 BIN := bin/server
 MIGRATION_DIR := internal/db/migrations
@@ -37,8 +37,27 @@ migrate-create:
 
 # Butuh pg_dump. Sesuai plan 09.
 backup:
-	pg_dump -Fc -Z9 "$(DATABASE_URL)" -f "backups/backup_$$(date +%Y%m%d_%H%M%S).dump"
+	@TIMESTAMP=$$(date +%Y%m%d_%H%M%S); \
+	FILE=backups/backup_$$TIMESTAMP.dump; \
+	pg_dump -Fc -Z9 "$(DATABASE_URL)" -f "$$FILE"; \
+	sha256sum "$$FILE" > "$$FILE.sha256"; \
+	echo "Backup: $$FILE"
 
 backup-encrypted:
-	pg_dump -Fc "$(DATABASE_URL)" | openssl enc -aes-256-cbc -pbkdf2 -k "$(BACKUP_ENCRYPTION_KEY)" \
-		-out "backups/backup_$$(date +%Y%m%d_%H%M%S).dump.enc"
+	@TIMESTAMP=$$(date +%Y%m%d_%H%M%S); \
+	FILE=backups/backup_$$TIMESTAMP.dump.enc; \
+	pg_dump -Fc "$(DATABASE_URL)" | openssl enc -aes-256-cbc -pbkdf2 -pass "env:BACKUP_ENCRYPTION_KEY" -out "$$FILE"; \
+	sha256sum "$$FILE" > "$$FILE.sha256"; \
+	echo "Backup: $$FILE"
+
+# Pakai: make verify-backup FILE=backups/backup_....dump.enc
+verify-backup:
+	cd backups && sha256sum -c "$(notdir $(FILE)).sha256"
+
+# Uji file backup bisa dibaca pg_restore tanpa menyentuh DB.
+restore-test:
+	@if [ "${FILE##*.}" = "enc" ]; then \
+		openssl enc -d -aes-256-cbc -pbkdf2 -pass "env:BACKUP_ENCRYPTION_KEY" -in "$(FILE)" | pg_restore --list > /dev/null; \
+	else \
+		pg_restore --list "$(FILE)" > /dev/null; \
+	fi && echo "Restore test OK"

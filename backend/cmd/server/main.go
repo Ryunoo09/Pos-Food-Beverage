@@ -16,6 +16,7 @@ import (
 
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/audit"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/auth"
+	"github.com/ryunoo09/pos-food-beverage/backend/internal/backup"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/config"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/dashboard"
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/db"
@@ -40,7 +41,16 @@ import (
 	"github.com/ryunoo09/pos-food-beverage/backend/internal/waste"
 )
 
+// version diisi saat build: -ldflags "-X main.version=1.0.0".
+var version = "dev"
+
+var startedAt = time.Now()
+
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "-healthcheck" {
+		os.Exit(healthcheck())
+	}
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
@@ -48,6 +58,25 @@ func main() {
 		logger.Error("server stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+// healthcheck dipakai Docker healthcheck dari dalam container minimal yang
+// tidak punya curl/wget.
+func healthcheck() int {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("http://127.0.0.1:" + port + "/health")
+	if err != nil {
+		return 1
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 1
+	}
+	return 0
 }
 
 func run(logger *slog.Logger) error {
@@ -68,6 +97,16 @@ func run(logger *slog.Logger) error {
 	// SSE hub: event realtime KDS + denah meja. Ping loop jalan selama server hidup.
 	sseHub := sse.NewHub()
 	go sseHub.StartPingLoop(ctx)
+
+	// Backup F21: hanya aktif bila BACKUP_DIR diisi (produksi).
+	if cfg.BackupDir != "" {
+		runner := backup.NewRunner(cfg.DatabaseURL, cfg.BackupDir,
+			cfg.BackupEncryptionKey, cfg.BackupRetentionDays, pool)
+		go runner.StartSchedule(ctx, cfg.BackupScheduleHour)
+		logger.Info("backup terjadwal aktif",
+			"dir", cfg.BackupDir, "hour", cfg.BackupScheduleHour,
+			"retention_days", cfg.BackupRetentionDays, "encrypted", cfg.BackupEncryptionKey != "")
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -348,7 +387,12 @@ func healthHandler(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "db": "ok"})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status": "ok",
+			"db":     "ok",
+			"version": version,
+			"uptime": time.Since(startedAt).Round(time.Second).String(),
+		})
 	}
 }
 
