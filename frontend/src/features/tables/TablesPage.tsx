@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Plus, Trash2, Users } from 'lucide-react'
+import { Pencil, Plus, Trash2, Users, Wifi, WifiOff } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { tableApi, TABLE_STATUSES } from '../../api/tables'
@@ -12,6 +12,8 @@ import { Dialog } from '../../components/ui/Dialog'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { Skeleton } from '../../components/ui/Skeleton'
+import { useSSE } from '../../hooks/useSSE'
+import type { SSEConnectionStatus } from '../../hooks/useSSE'
 import { useToast } from '../../hooks/useToast'
 import { useAuthStore } from '../../store/auth'
 import { apiMessage } from '../../utils/apiError'
@@ -58,10 +60,26 @@ export function TablesPage() {
   const [draft, setDraft] = useState<TableDraft | null>(null)
   const [deleting, setDeleting] = useState<Table | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [connStatus, setConnStatus] = useState<SSEConnectionStatus>('disconnected')
 
   const tables = useQuery({
     queryKey: ['tables'],
     queryFn: async () => (await tableApi.list()).data.data,
+  })
+
+  // SSE: update status meja realtime dari hub backend.
+  useSSE({
+    url: '/api/v1/kitchen/stream',
+    onEvent: (event) => {
+      if (event.type !== 'table.status_changed') return
+      const p = event.data as { table_id: string; table_no: string; old_status: string; new_status: string }
+      if (!p) return
+      queryClient.setQueryData(['tables'], (old: Table[] = []) =>
+        old.map((t) => (t.id === p.table_id ? { ...t, status: p.new_status as TableStatus } : t)),
+      )
+    },
+    onFullReload: () => void queryClient.invalidateQueries({ queryKey: ['tables'] }),
+    onConnectionChange: setConnStatus,
   })
 
   const areas = [...new Set((tables.data ?? []).map((table) => table.area ?? 'Tanpa area'))]
@@ -164,6 +182,19 @@ export function TablesPage() {
             ]}
           />
         </div>
+        <span
+          className={cn(
+            'inline-flex items-center gap-1.5 text-xs',
+            connStatus === 'connected' ? 'text-positive' : connStatus === 'reconnecting' ? 'text-warning' : 'text-muted',
+          )}
+        >
+          {connStatus === 'connected' ? (
+            <Wifi className="size-3.5" strokeWidth={1.5} />
+          ) : (
+            <WifiOff className="size-3.5" strokeWidth={1.5} />
+          )}
+          {connStatus === 'connected' ? 'Realtime' : connStatus === 'reconnecting' ? 'Menghubungkan…' : 'Terputus'}
+        </span>
       </div>
 
       {tables.isLoading ? (
