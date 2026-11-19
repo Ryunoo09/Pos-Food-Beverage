@@ -63,6 +63,14 @@ func (h *Handler) Void(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, err, requestID)
 		return
 	}
+	if h.hub != nil && actor.OutletID != "" {
+		h.hub.Publish(actor.OutletID, sse.EventTypeOrderPaymentStatusChanged, sse.OrderPaymentStatusChangedPayload{
+			OrderID:       result.Payment.OrderID,
+			PaymentStatus: result.Order.PaymentStatus,
+			OrderStatus:   result.Order.Status,
+			Timestamp:     time.Now().UTC(),
+		})
+	}
 	httpx.WriteData(w, http.StatusCreated, result, requestID)
 }
 
@@ -118,6 +126,15 @@ func (h *Handler) decideRefund(w http.ResponseWriter, r *http.Request,
 	if err != nil {
 		httpx.WriteError(w, err, requestID)
 		return
+	}
+	// Refund yang disetujui mengubah status pembayaran; tolak tidak.
+	if h.hub != nil && actor.OutletID != "" && result.Refund.Status != "REJECTED" {
+		h.hub.Publish(actor.OutletID, sse.EventTypeOrderPaymentStatusChanged, sse.OrderPaymentStatusChangedPayload{
+			OrderID:       result.Refund.OrderID,
+			PaymentStatus: result.Order.PaymentStatus,
+			OrderStatus:   result.Order.Status,
+			Timestamp:     time.Now().UTC(),
+		})
 	}
 	httpx.WriteData(w, http.StatusOK, result, requestID)
 }

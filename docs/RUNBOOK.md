@@ -1,88 +1,153 @@
-# RUNBOOK — Operasional Food POS UMKM
+# RUNBOOK — Backup, Restore, dan Deploy
 
-Prosedur untuk backup, restore, dan pengecekan sistem. Target: RPO <= 24 jam, RTO <= 4 jam.
+Target: satu VPS, Docker Compose (`docker-compose.prod.yml`), PostgreSQL 16.
+Semua perintah dijalankan dari root repo di VPS. RPO ≤ 24 jam, RTO ≤ 4 jam.
 
-## 1. Backup Manual
+---
+
+## 1. Deploy pertama
+
+```bash
+git clone <repo> pos && cd pos
+cp .env.example .env
+# Isi .env: DB_PASSWORD, JWT_SECRET (acak ≥32 byte), BACKUP_ENCRYPTION_KEY (≥32 byte),
+# APP_ENV=production, COOKIE_SECURE=true
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml exec backend /server -healthcheck
+curl -s http://localhost/health
+```
+
+Migrasi dijalankan sekali sebelum aplikasi melayani trafik:
+
+```bash
+# dari mesin dengan golang-migrate, atau lewat container sementara
+migrate -path backend/internal/db/migrations -database "$DATABASE_URL" up
+docker compose -f docker-compose.prod.yml restart backend
+```
+
+Deploy ulang setelah `git pull`:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Rollback image: `git checkout <tag-sebelumnya>` lalu ulangi perintah di atas
+(image dibangun ulang, data DB tidak berubah).
+
+---
+
+## 2. Backup
+
+Otomatis: backend menjalankan `pg_dump` tiap hari pada `BACKUP_SCHEDULE_HOUR`
+(default 02:00, zona waktu container), terenkripsi AES-256-CBC, checksum
+`.sha256`, dicatat di tabel `backup_records`, file lebih tua dari
+`BACKUP_RETENTION_DAILY` hari dihapus.
+
+Manual (dari root repo, butuh `pg_dump` di host):
 
 ```bash
 cd backend
-DATABASE_URL="postgres://pos_user:PASSWORD@localhost:5432/pos_fb?sslmode=disable" make backup
+make backup-encrypted DATABASE_URL="postgres://USER:PASS@db-host:5432/db" \
+  BACKUP_ENCRYPTION_KEY="<key>"
 ```
 
-Menghasilkan `backups/backup_<timestamp>.dump` (format custom `pg_dump`, terkompresi).
-
-Backup terenkripsi:
+Manual di dalam container:
 
 ```bash
-DATABASE_URL="..." BACKUP_ENCRYPTION_KEY="..." make backup-encrypted
+docker compose -f docker-compose.prod.yml exec backend \
+  /server -healthcheck  # cek backend hidup
+
+docker compose -f docker-compose.prod.yml exec db \
+  sh -c 'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB" > /tmp/manual.dump'
+docker compose -f docker-compose.prod.yml cp db:/tmp/manual.dump ./backups/
 ```
 
-## 2. Verifikasi Backup
+## 3. Verifikasi backup
 
 ```bash
-# integritas file
-sha256sum -c backups/backup_20260101_020000.dump.sha256
-
-# isi arsip masih bisa dibaca
-pg_restore --list backups/backup_20260101_020000.dump > /dev/null && echo "OK"
+cd backend
+make verify-backup FILE=backups/backup_20261117_020000.dump.enc
+# atau langsung
+cd backups && sha256sum -c backup_20261117_020000.dump.enc.sha256
 ```
 
 Backup yang gagal verifikasi **tidak boleh** dianggap cadangan.
 
-## 3. Restore
+Jadwal retensi: scheduler hanya membuat backup harian (retensi
+`BACKUP_RETENTION_DAILY`). Tier mingguan/bulanan masih manual — salin file
+harian ke direktori terpisah di luar VPS sesuai kebutuhan RPO/RTO:
 
-Restore ke database produksi hanya dengan persetujuan OWNER dan dicatat di audit log.
+## 4. Restore
+
+Restore menimpa data. Lakukan saat toko tutup, dan pastikan backup baru sudah
+dibuat sebelum mulai.
+
+1. Mode maintenance: hentikan backend agar tidak ada tulis baru.
+   ```bash
+   docker compose -f docker-compose.prod.yml stop backend
+   ```
+2. Siapkan DB baru (hindari menimpa DB lama sebelum verifikasi):
+   ```bash
+   docker compose -f docker-compose.prod.yml exec db \
+     psql -U "$POSTGRES_USER" -d postgres -c 'CREATE DATABASE pos_fb_restore;'
+   ```
+3. Dekripsi dan restore:
+   ```bash
+   cd backend
+   openssl enc -d -aes-256-cbc -pbkdf2 -pass "env:BACKUP_ENCRYPTION_KEY" \
+     -in ../backups/backup_<tanggal>.dump.enc \
+     | pg_restore -h <db-host> -U <user> -d pos_fb_restore --no-owner
+   ```
+4. Verifikasi jumlah baris tabel inti dan saldo stok:
+   ```sql
+   SELECT count(*) FROM orders;
+   SELECT count(*) FROM order_items;
+   SELECT ingredient_id, quantity_on_hand FROM inventory ORDER BY ingredient_id LIMIT 10;
+   ```
+   Stok harus konsisten dengan movement:
+   ```sql
+   SELECT ingredient_id, SUM(quantity_delta) FROM stock_movements
+   GROUP BY ingredient_id ORDER BY ingredient_id LIMIT 10;
+   ```
+   Nilai SUM(quantity_delta) per bahan harus sama dengan `quantity_on_hand`.
+   Jika verifikasi gagal, jangan alihkan — DB lama masih utuh.
+5. Alihkan aplikasi ke DB hasil restore (`DB_NAME=pos_fb_restore` di `.env`),
+   nyalakan backend, cek `GET /health` dan beberapa pesanan terakhir.
+6. Catat restore di `audit_logs` (aksi manual atau lewat aplikasi) dan simpan
+   file backup asli minimal 14 hari.
+
+## 5. Operasi harian
 
 ```bash
-# 1. Mode pemeliharaan: hentikan penulisan
-docker compose stop backend frontend
-
-# 2. Pulihkan ke database baru dulu (jangan langsung timpa produksi)
-createdb pos_fb_restore
-pg_restore -d pos_fb_restore --clean --if-exists backups/backup_20260101_020000.dump
-
-# 3. Verifikasi
-psql -d pos_fb_restore -c "SELECT count(*) FROM orders;"
-psql -d pos_fb_restore -c "SELECT ingredient_id, quantity_on_hand FROM inventory LIMIT 10;"
-psql -d pos_fb_restore -c "SELECT SUM(quantity_delta) FROM stock_movements GROUP BY ingredient_id LIMIT 10;"
-# SUM(quantity_delta) per bahan harus sama dengan quantity_on_hand
-
-# 4. Alihkan: arahkan DB_NAME ke database hasil restore, lalu jalankan ulang
-docker compose up -d db backend frontend
-curl -f http://localhost:8080/health
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs -f backend
+docker compose -f docker-compose.prod.yml logs -f nginx
+curl -s http://localhost/health
 ```
 
-Jika langkah 3 gagal, **jangan** alihkan. Database produksi lama masih utuh.
+Backup terjadwal gagal? Cek log `backup terjadwal gagal` di backend dan baris
+`backup_records` dengan `status = 'FAILED'`. Penyebab umum: `pg_dump` tidak ada
+di image (build ulang Dockerfile) atau volume `/backups` penuh.
 
-## 4. Rollback Aplikasi
+Health `"db":"down"` atau 503 = backend tidak menjangkau PostgreSQL: cek
+container `db`, disk penuh, dan connection limit.
+
+Simpan salinan backup off-site (VPS/objek storage lain). Kunci enkripsi
+disimpan terpisah dari file backup, jangan di repo.
+
+## 6. HTTPS
+
+Nginx produksi saat ini HTTP saja. Setelah domain mengarah ke VPS:
 
 ```bash
-docker compose down backend frontend
-git checkout <commit-stabil-sebelumnya>
-docker compose up -d --build backend frontend
-curl -f http://localhost:8080/health
+docker run --rm -v "$PWD/nginx/ssl:/etc/letsencrypt" certbot/certbot certonly \
+  --standalone -d pos.contoh.id
 ```
 
-Migrasi database yang sudah berjalan tidak otomatis dibalik. Jalankan `make migrate-down` hanya bila migrasi tersebut terbukti penyebab masalah, karena dapat menghapus data.
-
-## 5. Pengecekan Harian
+Tambahkan server block `listen 443 ssl;` dengan `ssl_certificate` dan
+`ssl_certificate_key` di `nginx/nginx.conf`, tambahkan volume
+`./nginx/ssl:/etc/nginx/ssl:ro`, buka port 443 di compose, lalu:
 
 ```bash
-curl -s http://localhost:8080/health
-# {"status":"ok","db":"ok"}
-
-docker compose logs --since 24h backend | grep '"level":"ERROR"'
-ls -lh backups/ | tail -5
+docker compose -f docker-compose.prod.yml up -d
 ```
-
-Health `"db":"down"` atau respons `503` berarti backend tidak dapat menjangkau PostgreSQL: cek container `db`, disk penuh, dan connection limit.
-
-## 6. Jadwal Backup
-
-| Jenis | Waktu | Retensi |
-|---|---|---|
-| Harian | 02:00 waktu bisnis | 14 hari |
-| Mingguan | Minggu 02:30 | 8 minggu |
-| Bulanan | tanggal 1, 03:00 | 12 bulan |
-
-Simpan salinan off-site terpisah dari server database. Kunci enkripsi disimpan terpisah dari file backup.

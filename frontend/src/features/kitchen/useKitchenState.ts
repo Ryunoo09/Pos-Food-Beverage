@@ -71,8 +71,9 @@ export function useKitchenState(statusFilter: string) {
     switch (event.type) {
       case 'kitchen.order.created': {
         const p = event.data as KitchenOrderCreatedPayload
-        // Tambahkan tiket baru ke cache bila status filter cocok atau filter kosong.
-        if (!statusFilter || ['NEW', 'COOKING', 'READY'].includes(p.priority === 'RUSH' ? 'NEW' : 'NEW')) {
+        // Tiket baru selalu berstatus NEW: hanya masuk cache bila filter kosong
+        // atau filter-nya NEW.
+        if (!statusFilter || statusFilter === 'NEW') {
           const newTicket: KitchenTicket = {
             id: p.order_id,
             order_id: p.order_id,
@@ -148,9 +149,6 @@ export function useKitchenState(statusFilter: string) {
         }
         break
       }
-      case 'full_reload':
-        void queryClient.invalidateQueries({ queryKey: ['kitchen'] })
-        break
     }
   }
 

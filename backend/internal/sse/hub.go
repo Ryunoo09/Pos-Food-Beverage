@@ -21,8 +21,9 @@ type Event struct {
 
 // Client adalah satu koneksi SSE terikat ke outlet.
 type Client struct {
-	outletID string
-	ch       chan Event
+	outletID    string
+	permissions []string
+	ch          chan Event
 }
 
 // Hub mengelola langganan SSE per outlet dengan ring buffer replay.
@@ -59,11 +60,13 @@ func NewHub() *Hub {
 // Subscribe mendaftarkan klien baru untuk outlet dan mengembalikan channel
 // event serta fungsi unsubscribe. Event terlewat (lastID < terbaru) di-replay
 // dari buffer; bila lastID tidak ditemukan di buffer, kirim full_reload.
-func (h *Hub) Subscribe(outletID string, lastID int64) (<-chan Event, func()) {
-	ch := make(chan Event, 16)
+func (h *Hub) Subscribe(outletID string, lastID int64, permissions ...string) (<-chan Event, func()) {
+	// Buffer harus cukup untuk seluruh ring buffer agar replay tidak memblokir
+	// Subscribe sebelum handler mulai membaca channel.
+	ch := make(chan Event, h.bufferLimit+16)
 
 	h.mu.Lock()
-	h.clients[outletID] = append(h.clients[outletID], &Client{outletID: outletID, ch: ch})
+	h.clients[outletID] = append(h.clients[outletID], &Client{outletID: outletID, permissions: permissions, ch: ch})
 	h.mu.Unlock()
 
 	if lastID > 0 {
@@ -110,12 +113,26 @@ func (h *Hub) Publish(outletID, eventType string, payload any) int64 {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for _, c := range h.clients[outletID] {
+		if eventType == EventTypeOrderPaymentStatusChanged && !canSeePayments(c.permissions) {
+			continue // staf dapur tidak boleh menerima status pembayaran
+		}
 		select {
 		case c.ch <- event:
 		default: // klien lambat; biarkan, tidak block publisher
 		}
 	}
 	return id
+}
+
+// canSeePayments benar bila subscriber boleh melihat data pembayaran.
+// Dicek lewat permission, bukan nama role, agar role kustom tetap benar.
+func canSeePayments(permissions []string) bool {
+	for _, p := range permissions {
+		if p == "payments.view" {
+			return true
+		}
+	}
+	return false
 }
 
 // Ping mengirim event ping per outlet tiap 30 detik (goroutine terpisah,
@@ -184,8 +201,14 @@ func (h *Hub) replay(outletID string, lastID int64, ch chan Event) {
 		pos++
 	}
 	if !found {
+		if len(buf) == 0 {
+			// Buffer kosong (mis. server baru restart): state tidak bisa
+			// direplay, klien harus load ulang lewat REST.
+			ch <- Event{Type: "full_reload"}
+			return
+		}
 		// lastID tidak ada di buffer: cek apakah seluruh buffer sudah > lastID.
-		if len(buf) == 0 || buf[0].event.ID > lastID {
+		if buf[0].event.ID > lastID {
 			pos = 0
 		} else {
 			ch <- Event{Type: "full_reload"} // ID 0: sinyal khusus, bukan dari hub

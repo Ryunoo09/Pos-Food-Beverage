@@ -101,6 +101,23 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	}, requestID)
 }
 
+// SSEToken menerbitkan token 60 detik untuk koneksi SSE (EventSource tidak bisa
+// mengirim header Authorization).
+func (h *Handler) SSEToken(w http.ResponseWriter, r *http.Request) {
+	actor, _ := ActorFrom(r.Context())
+	requestID := httpx.RequestIDFrom(r.Context())
+
+	token, expiresIn, err := h.svc.SSEToken(actor.UserID, actor.BusinessID)
+	if err != nil {
+		httpx.WriteError(w, err, requestID)
+		return
+	}
+	httpx.WriteData(w, http.StatusOK, map[string]any{
+		"token":      token,
+		"expires_in": expiresIn,
+	}, requestID)
+}
+
 func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	actor, _ := ActorFrom(r.Context())
 	requestID := httpx.RequestIDFrom(r.Context())

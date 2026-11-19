@@ -37,9 +37,11 @@ var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]
 func IsUUID(s string) bool { return uuidPattern.MatchString(s) }
 
 // Claims adalah isi access token. Permission tidak disimpan di token supaya
-// perubahan hak akses langsung berlaku.
+// perubahan hak akses langsung berlaku. Scope kosong = access token biasa;
+// "sse" = token berumur pendek khusus koneksi SSE.
 type Claims struct {
 	BusinessID string `json:"business_id"`
+	Scope      string `json:"scope,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -151,6 +153,28 @@ func ParseAccessToken(secret, raw string) (*Claims, error) {
 		return nil, err
 	}
 	return claims, nil
+}
+
+// NewSSEToken menandatangani token SSE berumur pendek. Token ini hanya lolos
+// middleware SSEAuthRequired, tidak bisa dipakai sebagai access token biasa.
+func NewSSEToken(secret string, ttl time.Duration, userID, businessID string) (string, error) {
+	now := time.Now()
+	claims := Claims{
+		BusinessID: businessID,
+		Scope:      "sse",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, err := token.SignedString([]byte(secret))
+	if err != nil {
+		return "", fmt.Errorf("newSSEToken: tanda tangan: %w", err)
+	}
+	return signed, nil
 }
 
 // NewOpaqueToken membuat token acak dan hash SHA-256 untuk disimpan di DB.
